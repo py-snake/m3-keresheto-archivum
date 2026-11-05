@@ -1,0 +1,38 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="hu">
+<head>
+	<meta charset="utf-8">
+	<title>{{.Title}}</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="referrer" content="no-referrer">
+	<link rel="icon" href="/static/logo.png" type="image/png">
+	<link rel="stylesheet" href="/static/m3.min.css">
+	<link rel="stylesheet" href="/static/app.css?v=3">
+</head>
+<body class="mdc-typography">
+	<header>
+		<h1 class="mdc-typography--headline5">{{.Title}}</h1>
+	</header>
+
+	<main class="main-content mdc-typography--body2">
+		<form id="search-form" method="get" action="/">
+			<div class="mdc-text-field mdc-text-field--outlined mdc-text-field--with-leading-icon">
+				<svg class="mdc-text-field__icon search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><line x1="15" y1="15" x2="21" y2="21" stroke="currentColor" stroke-width="2"/></svg>
+				<input id="search-field" class="mdc-text-field__input" type="search" name="kereses" value="{{.Search}}" maxlength="100" autofocus aria-label="Keresés" tabindex="0">
+				<div class="mdc-notched-outline mdc-notched-outline--upgraded">
+					<div class="mdc-notched-outline__leading"></div>
+					<div class="mdc-notched-outline__notch"></div>
+					<div class="mdc-notched-outline__trailing"></div>
+				</div>
+			</div>
+			<button id="search-button" type="submit" class="mdc-button mdc-button--raised"><span class="mdc-button__ripple"></span>Keresés</button>
+		</form>
+
+		{{template "content" .}}
+	</main>
+
+	<footer class="mdc-typography--caption">
+		<a href="https://github.com/py-snake/m3-keresheto-archivum" rel="noopener noreferrer">forráskód</a>
+	</footer>
+</body>
+</html>{{end}}

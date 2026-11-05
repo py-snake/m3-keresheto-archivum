@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 200" width="300" height="200" role="img" aria-label="Nincs borítókép">
+	<rect width="300" height="200" fill="#2b2b33"/>
+	<rect x="14" y="14" width="272" height="172" rx="6" fill="none" stroke="#55555f" stroke-width="3"/>
+	<polygon points="125,70 125,130 175,100" fill="#8a8a96"/>
+</svg>

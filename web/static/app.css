@@ -27,27 +27,6 @@ h1 {
 	cursor: auto;
 }
 
-#search-form.searching {
-	pointer-events: none;
-}
-
-#search-form.searching .mdc-text-field__icon::before {
-	animation-name: spin;
-	animation-duration: 3000ms;
-	animation-iteration-count: infinite;
-	animation-timing-function: linear;
-}
-
-@keyframes spin {
-	from {
-		transform: rotate(0deg);
-	}
-
-	to {
-		transform: rotate(360deg);
-	}
-}
-
 .list__total {
 	text-align: center;
 	margin-top: 10px;
@@ -59,10 +38,6 @@ h1 {
 	margin-top: 20px;
 	margin-bottom: 20px;
 	text-align: center;
-}
-
-.paginator__wrapper .mdi {
-	font-size: 1.5rem;
 }
 
 .list__table {
@@ -128,10 +103,6 @@ footer {
 	max-height: 300px;
 }
 
-.m3player .vjs-menu-button-popup .vjs-menu {
-	width: 12em;
-}
-
 .m3player .m3player-overlay {
 	position: absolute;
 	color: white;
@@ -143,23 +114,6 @@ footer {
 	border-radius: 2px;
 	padding: 1px 4px 0 4px;
 	line-height: 1.1rem;
-}
-
-.vjs-modal-dialog.vjs-text-track-settings {
-	height: 100%;
-}
-
-.vjs-text-track-settings .vjs-modal-dialog-content {
-	grid: none;
-	padding: 0;
-}
-
-.vjs-text-track-settings .vjs-modal-dialog-content fieldset {
-	margin: 10px 0;
-}
-
-.vjs-text-track-settings .vjs-track-settings-controls {
-	text-align: center;
 }
 
 details {
@@ -180,4 +134,20 @@ details[open] {
 
 details[open] summary {
 	margin-bottom: 0.5em;
+}
+
+.search-icon {
+	width: 1.7rem;
+	height: 1.7rem;
+	padding: 0 8px;
+}
+
+.m3player img {
+	max-width: 300px;
+	max-height: 300px;
+	height: auto;
+}
+
+.paginator__wrapper a {
+	text-decoration: none;
 }
