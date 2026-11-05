@@ -18,7 +18,9 @@ if ( ! function_exists('scrape_url')) {
 	function scrape_url($url, $cookies = '', $agent = '')
 	{
 		if ($agent === '') {
-			$agent = 'm3-keresheto-archivum/1.0 (+https://github.com/py-snake/m3-keresheto-archivum)';
+			// Always a regular browser User-Agent. Keep the version current (a years old Chrome stands out);
+			// override with the UPSTREAM_USER_AGENT environment variable without touching the code.
+			$agent = m3_env('UPSTREAM_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36');
 		}
 
 		$ch = curl_init();
