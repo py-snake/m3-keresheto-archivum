@@ -1,0 +1,209 @@
+// Package config reads the whole runtime configuration from environment variables.
+//
+// Nothing else in the program touches the environment, and there are no secrets
+// except an optional proxy password inside UPSTREAM_PROXY.
+package config
+
+import (
+	"fmt"
+	"net/netip"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// DefaultUserAgent is a regular desktop browser User-Agent. It is a deliberate
+// project decision that outbound requests never announce a custom client name.
+// Keep the version reasonably current and override it with UPSTREAM_USER_AGENT.
+const DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+
+// Config is the complete runtime configuration.
+type Config struct {
+	// DataDir holds m3.sqlite, images/ and backups/.
+	DataDir string
+	// Listen is the address `m3 serve` listens on.
+	Listen string
+	// TrustedProxies are the networks whose X-Forwarded-For / CF-Connecting-IP headers are believed.
+	TrustedProxies []netip.Prefix
+
+	// RateLimit is the sustained requests per second allowed per client, RateBurst the burst size.
+	RateLimit float64
+	RateBurst int
+	// MaxInFlight caps the number of requests handled concurrently.
+	MaxInFlight int
+
+	// UpstreamUserAgent is sent on every outbound request.
+	UpstreamUserAgent string
+	// UpstreamProxy routes all outbound traffic through an HTTP or HTTPS (CONNECT) proxy. Nil = direct.
+	UpstreamProxy *url.URL
+	// UpstreamProxyInsecure skips verification of the *proxy's* TLS certificate (https:// proxies only).
+	// The certificate of the upstream site itself is always verified.
+	UpstreamProxyInsecure bool
+	// UpstreamCAFile adds extra trusted root certificates (PEM) for the upstream site.
+	UpstreamCAFile string
+	// RequestDelay is the pause between consecutive upstream requests of the ingest.
+	RequestDelay time.Duration
+	// ImagesPerRun caps how many cover images one ingest run downloads.
+	ImagesPerRun int
+	// ImageMaxWidth is the width cover images are scaled down to (0 = keep the original size).
+	ImageMaxWidth int
+	// BackupsKept is the number of rotated database backups.
+	BackupsKept int
+}
+
+// FromEnv builds a Config from getenv (usually os.Getenv).
+func FromEnv(getenv func(string) string) (*Config, error) {
+	c := &Config{
+		DataDir:           str(getenv, "M3_DATA_DIR", "/data"),
+		Listen:            str(getenv, "M3_LISTEN", ":8080"),
+		RateLimit:         3,
+		RateBurst:         15,
+		MaxInFlight:       64,
+		UpstreamUserAgent: str(getenv, "UPSTREAM_USER_AGENT", DefaultUserAgent),
+		UpstreamCAFile:    getenv("UPSTREAM_CA_FILE"),
+		RequestDelay:      250 * time.Millisecond,
+		ImagesPerRun:      300,
+		ImageMaxWidth:     480,
+		BackupsKept:       14,
+	}
+
+	var err error
+
+	if c.TrustedProxies, err = parsePrefixes(getenv("M3_TRUSTED_PROXIES")); err != nil {
+		return nil, fmt.Errorf("M3_TRUSTED_PROXIES: %w", err)
+	}
+
+	if v := getenv("UPSTREAM_PROXY"); v != "" {
+		if c.UpstreamProxy, err = ParseProxyURL(v); err != nil {
+			// never echo the value: it may contain a password
+			return nil, fmt.Errorf("UPSTREAM_PROXY: %w", err)
+		}
+	}
+
+	if c.UpstreamProxyInsecure, err = boolean(getenv("UPSTREAM_PROXY_INSECURE")); err != nil {
+		return nil, fmt.Errorf("UPSTREAM_PROXY_INSECURE: %w", err)
+	}
+	if c.UpstreamProxyInsecure && (c.UpstreamProxy == nil || c.UpstreamProxy.Scheme != "https") {
+		return nil, fmt.Errorf("UPSTREAM_PROXY_INSECURE only makes sense with an https:// UPSTREAM_PROXY")
+	}
+
+	if c.RateLimit, err = float(getenv("M3_RATE_LIMIT"), c.RateLimit); err != nil {
+		return nil, fmt.Errorf("M3_RATE_LIMIT: %w", err)
+	}
+	if c.RateBurst, err = integer(getenv("M3_RATE_BURST"), c.RateBurst, 1, 10000); err != nil {
+		return nil, fmt.Errorf("M3_RATE_BURST: %w", err)
+	}
+	if c.MaxInFlight, err = integer(getenv("M3_MAX_IN_FLIGHT"), c.MaxInFlight, 1, 100000); err != nil {
+		return nil, fmt.Errorf("M3_MAX_IN_FLIGHT: %w", err)
+	}
+	if c.ImagesPerRun, err = integer(getenv("M3_IMAGES_PER_RUN"), c.ImagesPerRun, 0, 1000000); err != nil {
+		return nil, fmt.Errorf("M3_IMAGES_PER_RUN: %w", err)
+	}
+	if c.ImageMaxWidth, err = integer(getenv("M3_IMAGE_MAX_WIDTH"), c.ImageMaxWidth, 0, 4096); err != nil {
+		return nil, fmt.Errorf("M3_IMAGE_MAX_WIDTH: %w", err)
+	}
+	if c.BackupsKept, err = integer(getenv("M3_BACKUPS_KEPT"), c.BackupsKept, 0, 1000); err != nil {
+		return nil, fmt.Errorf("M3_BACKUPS_KEPT: %w", err)
+	}
+	if v := getenv("M3_REQUEST_DELAY_MS"); v != "" {
+		ms, err := integer(v, 0, 0, 60000)
+		if err != nil {
+			return nil, fmt.Errorf("M3_REQUEST_DELAY_MS: %w", err)
+		}
+		c.RequestDelay = time.Duration(ms) * time.Millisecond
+	}
+
+	return c, nil
+}
+
+// ParseProxyURL validates a proxy URL: http:// or https://, a host, optional user:password, nothing else.
+func ParseProxyURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, fmt.Errorf("not a valid URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("scheme must be http or https (got %q)", u.Scheme)
+	}
+	if u.Hostname() == "" {
+		return nil, fmt.Errorf("missing host")
+	}
+	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return nil, fmt.Errorf("must be only scheme://[user:password@]host[:port]")
+	}
+	if p := u.Port(); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 {
+			return nil, fmt.Errorf("invalid port")
+		}
+	}
+	return u, nil
+}
+
+// RedactedProxy returns scheme://host of the proxy, without any credentials, for logs.
+func RedactedProxy(u *url.URL) string {
+	if u == nil {
+		return "none"
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+func str(getenv func(string) string, key, def string) string {
+	if v := strings.TrimSpace(getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
+
+func boolean(v string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "0", "false", "no", "off":
+		return false, nil
+	case "1", "true", "yes", "on":
+		return true, nil
+	}
+	return false, fmt.Errorf("expected 0/1/true/false")
+}
+
+func integer(v string, def, min, max int) (int, error) {
+	if strings.TrimSpace(v) == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < min || n > max {
+		return 0, fmt.Errorf("expected an integer between %d and %d", min, max)
+	}
+	return n, nil
+}
+
+func float(v string, def float64) (float64, error) {
+	if strings.TrimSpace(v) == "" {
+		return def, nil
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil || f <= 0 || f > 100000 {
+		return 0, fmt.Errorf("expected a positive number")
+	}
+	return f, nil
+}
+
+func parsePrefixes(v string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, part := range strings.Split(v, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(part); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		a, err := netip.ParseAddr(part)
+		if err != nil {
+			return nil, fmt.Errorf("%q is neither an IP nor a CIDR", part)
+		}
+		out = append(out, netip.PrefixFrom(a, a.BitLen()))
+	}
+	return out, nil
+}
