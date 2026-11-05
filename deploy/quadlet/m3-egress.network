@@ -1,0 +1,4 @@
+[Network]
+NetworkName=m3-egress
+# an ordinary network with outbound access, for the ingest jobs and cloudflared
+Subnet=10.89.78.0/24

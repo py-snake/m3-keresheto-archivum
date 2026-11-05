@@ -1,6 +1,6 @@
 # Go-s teljes kiváltás: terv (`go` branch)
 
-> **Állapot:** TERV. A Go kód még nincs megírva. Ez a dokumentum a PHP-verzió (`master`) alapján tervezi a **teljes kiváltását**.
+> **Állapot (2026-11-05): MEGVALÓSÍTVA.** A dokumentum a tervet és az indoklást őrzi; a tényleges állapotot és az eltéréseket a [18. fejezet](#18-megvalósítási-állapot-és-eltérések-a-tervtől) írja le. (Az eredeti, PHP-s `master` ág nem releváns tovább.)
 > **Eldöntött (2026-11-05, a felhasználó):** **D1** nincs `/add`; **D3** a borítóképeket a Go bináris szolgálja ki helyben tárolt fájlokból (a statikus tartalom az exe-be fordítva); **D6** nincs régi adat, üres adatbázisról indulunk; **kifelé mindig valódi böngésző User-Agent**.
 > **Elsődleges szempont: a biztonság.** Minden *mért* tény mellett dátum és bizonyíték áll; ami nincs megmérve, az `(terv)` vagy `(ellenőrizendő)` jelölést kap.
 > A dokumentum élő: a döntések és mérések változásakor frissítsd, és a [CLAUDE.md](../CLAUDE.md) változásnaplójába is írj egy sort.
@@ -353,3 +353,29 @@ deploy/quadlet/*  Containerfile
 docs/GO-DESIGN.md  docs/spikes/
 (PHP: application/, system/, index.php, … a 6. fázisig referenciaként)
 ```
+
+## 18. Megvalósítási állapot és eltérések a tervtől
+
+**Kész és tesztelt (2026-11-05):** a teljes program (`cmd/m3`, `internal/*`, `web/`), `Containerfile`, `deploy/quadlet/`, `tests/e2e/`. Tesztek: `go vet`, `go test -race ./...`, 3 fuzzer (hibátlan), `govulncheck` (tiszta), `tests/e2e/run.sh` **48/48** valós M3 oldallal. A biztonsági kritériumok (13. fejezet) állapota a [CLAUDE.md 6. fejezetében](../CLAUDE.md).
+
+**Kimenő proxy-támogatás (a felhasználó kérése, a tervben nem szerepelt):** `UPSTREAM_PROXY` (http:// vagy https:// `CONNECT`-proxy, opcionális `user:password@`), `UPSTREAM_PROXY_INSECURE` (csak a *proxy* TLS-tanúsítványát nem ellenőrzi; a céloldalét soha), `UPSTREAM_CA_FILE`. A céloldal nevét a proxy oldja fel; környezeti `HTTP(S)_PROXY`-t nem használunk; proxy-hibánál nincs visszaesés közvetlen kapcsolatra; a jelszó nem kerül naplóba. Bizonyítás: a gyűjtő egy `--internal` podman hálózaton fut (nincs útja az internetre), és csak a proxyn át működik; a proxyk naplója szerint kizárólag `nemzetiarchivum.hu:443`-ra nyitottak alagutat.
+
+**Eltérések a tervtől:**
+
+| Terv | Megvalósítás | Miért |
+|---|---|---|
+| `GET /public/…` statikus útvonal | `GET /static/…` | a régi `/public/` a PHP-s elrendezésé volt |
+| CSP `img-src 'self'` | `img-src 'self' data:` | az `m3.min.css` apró `data:` SVG-ket tartalmaz (nyilak); a `data:` kép inert |
+| oldalplafon ≤100, találatplafon 1000 | oldalplafon **1000**, találatplafon **10 000** | az üres keresés (böngészés) mélyebb lapozást kíván; a költség a mérések szerint elhanyagolható |
+| NFC-normalizálás | **nincs** | a `golang.org/x/text` új modul lenne; a vezérlő-, bidi- és cserekarakterek szűrése megvan |
+| `m3 import` (régi adat) | **elvetve** | nincs régi adat (D6) |
+| `m3 backup` / `m3 export csv` | **nincs** | a mentés a publikált fájl másolása + a `backups/` rotáció; a CSV-export (D4) nincs megvalósítva |
+| a sorozat-lapozás kódolása „ellenőrizendő" | **igazolva** | valós oldalon és a fixture-ökön; `page=0 ≡ page=1` |
+| rate limit: „pl." értékek | alapérték **3 kérés/s, 15 kitörés** látogatónként; **64** egyidejű kérés | `M3_RATE_LIMIT`, `M3_RATE_BURST`, `M3_MAX_IN_FLIGHT` |
+| authorizer függvény-lista (`substr`, `bm25`, `snippet` is) | `match, count, min, max, coalesce, length, lower, upper` | csak ami a lekérdezésekhez kell; plusz `PRAGMA user_version` olvasás |
+| a trigram-index mérete csak szintetikusan | **valós**: 10,5 MB / 962 műsor (≈11 KB/műsor) | lásd CLAUDE.md 3. fejezet |
+| keresési késleltetés (0. fázis kapu) | **valós adaton p95 = 2,7 ms**, max 4,7 ms | `internal/store/latency_test.go` |
+| CSP érvényesítése böngészőben (S14) | **igazolva**: headless Chromium, 0 sértés a valós oldalakon, pozitív kontrollal | |
+| Quadlet egységek „kipróbálandók" | a **generátor `--dryrun` hibátlanul elfogadja**; **élesben nem indítottuk** (cloudflared token nélkül) | |
+
+**Tanulságok (hibák, amiket a tesztek kaptak el):** az `INSERT OR IGNORE` a `CHECK`-hibákat is elnyelte volna (→ `ON CONFLICT (program_id) DO NOTHING`); az authorizernek a driver és az FTS5 belső `PRAGMA`-it szűken engedni kellett; a Go mux a `..` utakra 307-et ad, nem 404-et.

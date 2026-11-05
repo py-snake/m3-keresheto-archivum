@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the m3 weekly ingest
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15min
+Persistent=true
+Unit=m3-ingest-weekly.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,26 @@
+[Unit]
+Description=Cloudflare Tunnel to the m3 web role
+After=m3-web.service
+Requires=m3-web.service
+
+[Container]
+ContainerName=m3-cloudflared
+# pin to a digest in production
+Image=docker.io/cloudflare/cloudflared:latest
+Exec=tunnel --no-autoupdate run
+# reaches m3-web on the internal network, and Cloudflare through the egress network
+Network=m3-internal.network
+Network=m3-egress.network
+ReadOnly=true
+DropCapability=ALL
+NoNewPrivileges=true
+# create once:  printf '%s' "$TOKEN" | podman secret create m3-tunnel-token -
+Secret=m3-tunnel-token,type=env,target=TUNNEL_TOKEN
+# In the Cloudflare dashboard point the public hostname at  http://m3-web:8080
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,26 @@
+[Unit]
+Description=m3 ingest (the open-archive collections)
+
+[Container]
+ContainerName=m3-ingest-weekly
+Image=localhost/m3:latest
+Exec=ingest weekly
+# outbound access, but no connection to the web role's network
+Network=m3-egress.network
+ReadOnly=true
+DropCapability=ALL
+NoNewPrivileges=true
+UserNS=keep-id
+User=%U
+Group=%G
+Memory=512m
+# the ingest is the only role that may write the data directory
+Volume=%h/m3/data:/data:z
+# optional: send every outbound request through a proxy instead of this machine's own address.
+#   printf '%s' 'https://user:password@proxy.example:8443' | podman secret create m3-upstream-proxy -
+# Secret=m3-upstream-proxy,type=env,target=UPSTREAM_PROXY
+# Environment=UPSTREAM_PROXY_INSECURE=1   # only for a proxy with a self-signed certificate
+
+[Service]
+Type=oneshot
+TimeoutStartSec=1h

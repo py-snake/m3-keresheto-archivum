@@ -1,0 +1,5 @@
+[Network]
+NetworkName=m3-internal
+# no route to the outside: containers on this network cannot open outbound connections
+Internal=true
+Subnet=10.89.77.0/24

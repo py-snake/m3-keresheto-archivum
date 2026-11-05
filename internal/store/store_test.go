@@ -487,3 +487,38 @@ func TestUnsupportedSchemaVersion(t *testing.T) {
 		t.Fatal("unknown schema version served")
 	}
 }
+
+// FuzzSearchTerm throws arbitrary bytes at the search. A term must never cause an SQL or FTS5
+// syntax error, never be interpreted as an operator, never write, and never match more than exists.
+func FuzzSearchTerm(f *testing.F) {
+	dir := f.TempDir()
+	ps := []model.Program{prog("M3-AAA1", "Hello world"), prog("M3-AAA2", `Idézet "szó" benne`), prog("M3-AAA3", "NEAR AND OR NOT title")}
+	if _, err := (&Publisher{Dir: dir}).Run(context.Background(), func(ctx context.Context, w *Writer) error {
+		_, err := w.InsertPrograms(ctx, ps)
+		return err
+	}); err != nil {
+		f.Fatal(err)
+	}
+	r, err := OpenReader(filepath.Join(dir, DBFile))
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Cleanup(func() { r.Close() })
+
+	for _, seed := range []string{"Hello", `"`, `""`, `" OR title:* NEAR(a b)`, "*", "^x", "title:Hello", "M3-AAA1", "M3-", "a%00b", "(", ")", "-x", "AND", "\xff\xfe"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, term string) {
+		res, err := r.Search(context.Background(), term, 10, 0)
+		if err != nil && !errors.Is(err, ErrTermTooShort) {
+			t.Fatalf("term %q caused an error: %v", term, err)
+		}
+		if res.Total > 3 || len(res.Items) > 3 {
+			t.Fatalf("term %q matched %d rows of 3: treated as an operator", term, res.Total)
+		}
+		var n int
+		if err := r.db.QueryRow("SELECT count(*) FROM programs").Scan(&n); err != nil || n != 3 {
+			t.Fatalf("data changed after term %q: %d %v", term, n, err)
+		}
+	})
+}

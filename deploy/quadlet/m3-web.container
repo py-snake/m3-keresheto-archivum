@@ -1,0 +1,34 @@
+[Unit]
+Description=m3 searchable archive (web role: read-only, no outbound network)
+After=network-online.target
+
+[Container]
+ContainerName=m3-web
+Image=localhost/m3:latest
+Exec=serve
+# only the internal network: the web role never needs to reach out
+Network=m3-internal.network
+ReadOnly=true
+DropCapability=ALL
+NoNewPrivileges=true
+UserNS=keep-id
+User=%U
+Group=%G
+PidsLimit=256
+Memory=256m
+# the data directory is the host user's: the web role can only read it
+Volume=%h/m3/data:/data:ro,z
+Environment=M3_LISTEN=:8080
+# the cloudflared container's address range (see m3-internal.network): only it may set forwarded headers
+Environment=M3_TRUSTED_PROXIES=10.89.77.0/24
+HealthCmd=/m3 healthcheck
+HealthInterval=30s
+HealthRetries=3
+HealthOnFailure=kill
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,108 @@
+package config
+
+import (
+	"strings"
+	"testing"
+	"time"
+)
+
+func env(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+
+func TestDefaults(t *testing.T) {
+	c, err := FromEnv(env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DataDir != "/data" || c.Listen != ":8080" || c.UpstreamProxy != nil || c.UpstreamProxyInsecure {
+		t.Fatalf("%+v", c)
+	}
+	if c.UpstreamUserAgent != DefaultUserAgent || !strings.HasPrefix(c.UpstreamUserAgent, "Mozilla/5.0 ") || !strings.Contains(c.UpstreamUserAgent, "Chrome/") {
+		t.Fatalf("the default User-Agent must be a regular browser one: %q", c.UpstreamUserAgent)
+	}
+	if strings.Contains(strings.ToLower(c.UpstreamUserAgent), "m3-keresheto") || strings.Contains(strings.ToLower(c.UpstreamUserAgent), "bot") {
+		t.Fatal("the User-Agent must not announce this program")
+	}
+	if c.ImageMaxWidth != 480 || c.ImagesPerRun != 300 || c.RequestDelay != 250*time.Millisecond {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestUserAgentOverride(t *testing.T) {
+	c, _ := FromEnv(env(map[string]string{"UPSTREAM_USER_AGENT": "Mozilla/5.0 (X11; Linux x86_64) Firefox/200.0"}))
+	if c.UpstreamUserAgent != "Mozilla/5.0 (X11; Linux x86_64) Firefox/200.0" {
+		t.Fatal(c.UpstreamUserAgent)
+	}
+}
+
+func TestProxySettings(t *testing.T) {
+	good := map[string]string{
+		"http://proxy.example:3128":        "http://proxy.example:3128",
+		"https://proxy.example:8443":       "https://proxy.example:8443",
+		"http://proxy.example":             "http://proxy.example",
+		"http://alice:s3cret@10.0.0.5:80":  "http://10.0.0.5:80",
+		"https://alice:s3cret@[::1]:8443/": "https://[::1]:8443",
+		" http://proxy.example:3128 ":      "http://proxy.example:3128",
+	}
+	for in, wantLabel := range good {
+		c, err := FromEnv(env(map[string]string{"UPSTREAM_PROXY": in}))
+		if err != nil {
+			t.Errorf("%q: %v", in, err)
+			continue
+		}
+		if got := RedactedProxy(c.UpstreamProxy); got != wantLabel {
+			t.Errorf("%q: label %q, want %q", in, got, wantLabel)
+		}
+		if l := RedactedProxy(c.UpstreamProxy); strings.Contains(l, "alice") || strings.Contains(l, "s3cret") {
+			t.Errorf("credentials in the log label: %s", l)
+		}
+	}
+
+	bad := []string{
+		"socks5://proxy:1080", "ftp://proxy", "proxy.example:3128", "//proxy.example", "http://", "http://:3128",
+		"http://proxy.example:99999", "http://proxy.example:abc", "http://proxy.example/path", "http://proxy.example?x=1",
+		"http://proxy.example#frag", "file:///etc/passwd", "javascript:alert(1)",
+	}
+	for _, in := range bad {
+		if _, err := FromEnv(env(map[string]string{"UPSTREAM_PROXY": in})); err == nil {
+			t.Errorf("%q accepted", in)
+		}
+	}
+}
+
+func TestErrorsNeverEchoTheProxyPassword(t *testing.T) {
+	_, err := FromEnv(env(map[string]string{"UPSTREAM_PROXY": "socks5://alice:TOPSECRET@proxy:1080"}))
+	if err == nil || strings.Contains(err.Error(), "TOPSECRET") || strings.Contains(err.Error(), "alice") {
+		t.Fatalf("error leaks the credentials: %v", err)
+	}
+}
+
+func TestInsecureFlagOnlyForHTTPSProxies(t *testing.T) {
+	if _, err := FromEnv(env(map[string]string{"UPSTREAM_PROXY_INSECURE": "1"})); err == nil {
+		t.Error("insecure without a proxy accepted")
+	}
+	if _, err := FromEnv(env(map[string]string{"UPSTREAM_PROXY": "http://p:3128", "UPSTREAM_PROXY_INSECURE": "1"})); err == nil {
+		t.Error("insecure with an http proxy accepted (nothing to verify)")
+	}
+	c, err := FromEnv(env(map[string]string{"UPSTREAM_PROXY": "https://p:8443", "UPSTREAM_PROXY_INSECURE": "true"}))
+	if err != nil || !c.UpstreamProxyInsecure {
+		t.Fatalf("%v", err)
+	}
+	if _, err := FromEnv(env(map[string]string{"UPSTREAM_PROXY": "https://p:8443", "UPSTREAM_PROXY_INSECURE": "maybe"})); err == nil {
+		t.Error("garbage boolean accepted")
+	}
+}
+
+func TestNumbersAndNetworks(t *testing.T) {
+	for k, v := range map[string]string{
+		"M3_RATE_LIMIT": "0", "M3_RATE_BURST": "0", "M3_MAX_IN_FLIGHT": "-3", "M3_IMAGES_PER_RUN": "x",
+		"M3_IMAGE_MAX_WIDTH": "99999", "M3_BACKUPS_KEPT": "-1", "M3_REQUEST_DELAY_MS": "999999", "M3_TRUSTED_PROXIES": "10.0.0.0/33",
+	} {
+		if _, err := FromEnv(env(map[string]string{k: v})); err == nil {
+			t.Errorf("%s=%s accepted", k, v)
+		}
+	}
+	c, err := FromEnv(env(map[string]string{"M3_TRUSTED_PROXIES": "10.0.0.0/8, 192.168.1.5 ,fd00::/8", "M3_IMAGES_PER_RUN": "0", "M3_REQUEST_DELAY_MS": "0"}))
+	if err != nil || len(c.TrustedProxies) != 3 || c.ImagesPerRun != 0 || c.RequestDelay != 0 {
+		t.Fatalf("%+v %v", c, err)
+	}
+}
