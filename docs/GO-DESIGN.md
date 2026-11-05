@@ -1,6 +1,7 @@
 # Go-s teljes kiváltás: terv (`go` branch)
 
 > **Állapot:** TERV. A Go kód még nincs megírva. Ez a dokumentum a PHP-verzió (`master`) alapján tervezi a **teljes kiváltását**.
+> **Eldöntött (2026-11-05, a felhasználó):** **D1** nincs `/add`; **D3** a borítóképeket a Go bináris szolgálja ki helyben tárolt fájlokból (a statikus tartalom az exe-be fordítva); **D6** nincs régi adat, üres adatbázisról indulunk; **kifelé mindig valódi böngésző User-Agent**.
 > **Elsődleges szempont: a biztonság.** Minden *mért* tény mellett dátum és bizonyíték áll; ami nincs megmérve, az `(terv)` vagy `(ellenőrizendő)` jelölést kap.
 > A dokumentum élő: a döntések és mérések változásakor frissítsd, és a [CLAUDE.md](../CLAUDE.md) változásnaplójába is írj egy sort.
 
@@ -10,7 +11,7 @@
 
 **Cél:** a PHP/CodeIgniter alkalmazás (kereshető M3-archívum) funkcionális kiváltása **egyetlen statikus Go binárissal**, SQLite adatbázissal, podmanban futtatva, Cloudflare Tunnelen át kiszolgálva. Az SQLite fájl a **hoszt lemezén** van, hogy a hoszt felhasználó közvetlenül mentheti.
 
-**Nem-célok:** új funkciók (kártya layout, rádió műsorok) az első kiadásban; felhasználói fiókok, bejelentkezés, bármilyen webes írási út.
+**Nem-célok:** új funkciók (kártya layout, rádió műsorok) az első kiadásban; felhasználói fiókok, bejelentkezés, bármilyen webes írási út; **kérésre felvétel (`/add`)**: a felhasználó döntése szerint nem kell.
 
 ## 2. Mit jelent itt a „feltörhetetlen"?
 
@@ -54,10 +55,11 @@
 | `Cron::backup` (`m3-db.gz`) | a publikált SQLite fájl **maga a mentés** + `m3 backup` (rotáció) | nincs külön dump |
 | `Cron::csv` (`m3-db.csv.gz`) | `m3 export csv` (opcionális, [16. fejezet](#16-nyitott-döntések-a-felhasználónak)) | CSV-injection ellen escape (SEC-12) |
 | `Cron::refresh` | `m3 ingest refresh <from_id>` | helyben frissít, megtartja `added_at`-et |
-| `POST /add` | **v1-ben nincs**; helyette `m3 ingest item M3-…` a hoszton | [16. fejezet](#16-nyitott-döntések-a-felhasználónak) |
+| `POST /add` | **nincs, véglegesen** (D1); a hoszton futtatható `m3 ingest item M3-…` adminisztrációs eszközként megmarad | a web így tényleg csak olvasó |
 | `.htaccess` / nginx allowlist | nincs rá szükség: a Go szerver csak a saját útvonalait ismeri | |
 | `m3.min.css` + `app.css` | beágyazott (`embed`) statikus fájlok | a Google Fonts/unpkg helyett **saját tárolású** betű/ikon (CSP + adatvédelem) |
 | Inline JS (kereső UX, `/add` hívás) | **nincs JS** | a keresés sima GET űrlap; `script-src 'none'` |
+| Borítókép: `<img src="https://nemzetiarchivum.hu/images/m3/ID">` | `GET /img/{program_id}.jpg` **helyi fájlból** (D3); az ingest tölti le és dolgozza fel ([9.1](#91-borítóképek)) | az M3 nem látja a látogatókat; `img-src 'self'` |
 
 A PHP-oldali hibaosztályok (SEC-1…14, BUG-1…17, lásd [CLAUDE.md](../CLAUDE.md)) mindegyikéhez a Go-s terv **szerkezeti** választ ad: a paraméterezett SQL kötelező, nincs írható web, az upstream kliens státuszt és sémát ellenőriz, a nulla-értékek típusrendszerrel kezeltek, az idők UTC-ben egész számként tároltak, a kapcsolat utf-8.
 
@@ -82,6 +84,7 @@ A PHP-oldali hibaosztályok (SEC-1…14, BUG-1…17, lásd [CLAUDE.md](../CLAUDE
         │  HOSZT: /srv/m3/data/                │  a hoszt felhasználó tulajdona
         │    m3.sqlite        (publikált)      │  ← a hoszt user ezt menti (mindig konzisztens)
         │    backups/m3-YYYYMMDD.sqlite (N db) │
+        │    images/M3-….jpg   (csak bővül)    │
         └──────────────────▲───────────────────┘
                            │ ír: m3.sqlite.new → rename (atomi)
               ┌────────────┴─────────────┐
@@ -99,6 +102,7 @@ A PHP-oldali hibaosztályok (SEC-1…14, BUG-1…17, lásd [CLAUDE.md](../CLAUDE
 - A web szerep a cseréről az inode/mtime periodikus (pl. 30 s) `stat`-jából értesül, új kapcsolatot nyit, a régit türelmi idő után zárja. *(Mérve: a régi `immutable` kapcsolat a régi pillanatképet látja, az újra nyitott az újat.)*
 - **Ingest lépések:** `flock` (nincs két párhuzamos futás) → másolat → módosítás tranzakcióban → `PRAGMA integrity_check`, `foreign_key_check`, FTS5 `integrity-check` → **ésszerűségi ellenőrzés** (a sorok száma nem csökkenhet, az új sorok száma korlát alatt) → `fsync` fájl és könyvtár → a régi fájl **hardlinkje** `backups/`-ba, rotáció → `rename`.
 - Hibánál a `.new` fájl törlődik, a publikált fájl érintetlen marad, a kilépési kód ≠ 0.
+- **Képek:** az `images/` könyvtár **csak bővül**: a fájlokat az ingest `tmp` névre írja, `fsync`, majd `rename`; létező fájlt nem módosít. A képek az adatbázis **publikálása előtt** készülnek el, így a publikált adatbázis soha nem hivatkozik hiányzó képre. A web ugyanazt a könyvtárat csak olvashatóan látja.
 
 ### 5.2 Hoszt-oldali elrendezés és jogosultság
 
@@ -128,14 +132,15 @@ CREATE TABLE programs (
   series_id     TEXT NOT NULL DEFAULT '',   -- dekódolt (a PHP is így tárolta)
   episode       INTEGER NOT NULL DEFAULT 0, episodes INTEGER NOT NULL DEFAULT 0,
   added_at      INTEGER NOT NULL,           -- unix, UTC
-  released_at   INTEGER NOT NULL DEFAULT 0  -- unix, UTC; 0 = ismeretlen
+  released_at   INTEGER NOT NULL DEFAULT 0, -- unix, UTC; 0 = ismeretlen
+  image_state   INTEGER NOT NULL DEFAULT 0 CHECK (image_state IN (0,1,2)) -- 0 még nincs, 1 van helyi kép, 2 az upstreamnek nincs képe
 ) STRICT;
 ```
 
 - **Idők:** egész szám, UTC (a PHP `released` datetime fixen Budapest-idő volt, a korábbi „-1 óra" trükkel). A megjelenítés `Europe/Budapest`-ben; a scratch image-be a `time/tzdata` csomagot **be kell fordítani** (`import _ "time/tzdata"`).
 - **A `released` jelentése** az upstream `start_playable_dts` + `start_startTime_dts` **minimuma**, mint a PHP-ban (BUG-7: jelentése továbbra is vitatható; paritás első körben).
 - **Új, nem tárolt upstream mezők** (a PHP nem tárolta): `collection`, `isHighlighted`, `playable`, a teljes lejátszási ablakok. Később, külön döntés.
-- **Migráció:** a régi MariaDB-adat egyszeri importja ([16. fejezet](#16-nyitott-döntések-a-felhasználónak)): `m3 import` CSV/TSV-ből; a nulla dátum (`0000-00-00`) → `released_at = 0`.
+- **Nincs régi adat (D6):** üres adatbázisról indulunk, a mai (és a következő ~8 napos) ablakból; nincs `m3 import`. A történet innentől gyűlik, ezért a **mentés kiemelten fontos** (a lemez a hoszt felhasználó felelőssége, [5.2](#52-hoszt-oldali-elrendezés-és-jogosultság)).
 
 ## 7. Keresés
 
@@ -150,11 +155,11 @@ CREATE TABLE programs (
 
 ## 8. A HTTP réteg (`m3 serve`)
 
-- **Csak a standard könyvtár** (`net/http`, `html/template`, `embed`), külső router/keretrendszer nélkül. Útvonalak: `GET /`, `GET /{n}`, `GET /public/…` (beágyazott fájlok), `GET /healthz`. Minden más **404**; `GET`/`HEAD` kivételével minden metódus **405**. Nincs kérés-törzs, nincs süti, nincs session, nincs állapot.
+- **Csak a standard könyvtár** (`net/http`, `html/template`, `embed`), külső router/keretrendszer nélkül. Útvonalak: `GET /`, `GET /{n}`, `GET /public/…` (beágyazott fájlok), `GET /img/{program_id}.jpg` (helyi borítókép, [9.1](#91-borítóképek)), `GET /healthz`. Minden más **404**; `GET`/`HEAD` kivételével minden metódus **405**. Nincs kérés-törzs, nincs süti, nincs session, nincs állapot.
 - **Szerver korlátok (terv):** `ReadHeaderTimeout` 5 s, `ReadTimeout` 10 s, `WriteTimeout` 15 s, `IdleTimeout` 30 s, `MaxHeaderBytes` 8 KB, URL ≤ 2 KB; egyidejű kérések plafonja (semaphore), túllépésnél 503.
 - **Biztonsági fejlécek minden válaszon** (404/405/429/500 is):
   ```
-  Content-Security-Policy: default-src 'none'; style-src 'self'; font-src 'self'; img-src https://nemzetiarchivum.hu;
+  Content-Security-Policy: default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self';
                            form-action 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'
   X-Content-Type-Options: nosniff        Referrer-Policy: no-referrer
   Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()
@@ -172,13 +177,33 @@ CREATE TABLE programs (
 
 A nem megbízható bemenet **az upstream**. Szabályok:
 
-- **Kimenő kapcsolat csak `https://nemzetiarchivum.hu`-ra:** a kliens hoszt-allowlistet kényszerít, **átirányításnál is** (`CheckRedirect`), TLS ≥ 1.2, a hitelesítés be van kapcsolva, kapcsolat 10 s / összes 60 s időkorlát, válasz-méret plafon (pl. 32 MiB, `io.LimitReader`), nem 2xx → hiba. Őszinte `User-Agent`.
+- **Kimenő kapcsolat csak `https://nemzetiarchivum.hu`-ra:** a kliens hoszt-allowlistet kényszerít, **átirányításnál is** (`CheckRedirect`), TLS ≥ 1.2, a hitelesítés be van kapcsolva, kapcsolat 10 s / összes 60 s időkorlát, válasz-méret plafon (pl. 32 MiB, `io.LimitReader`), nem 2xx → hiba. **Valódi böngésző `User-Agent`** (felhasználói döntés; a PHP-ban `UPSTREAM_USER_AGENT`, a Go-ban is konfigurálható; a verziót karbantartani kell: egy évekkel ezelőtti Chrome feltűnő). Ugyanez vonatkozik minden más kifelé menő kérésre, így a képletöltésre is.
 - **Végpontok** (a PHP-val azonos, [CLAUDE.md 6. fejezet](../CLAUDE.md)): `daily_program`, `program_guide?days=30`, `get-open`, `get-open?collection=`, `open?series=&page=` (HTML), `item?id=`. Az ismeretlen azonosító `200 + null` → „nincs ilyen elem" (nem hiba, nem összeomlás).
 - **Validáció minden elemre:** `program_id` `^M3-[A-Z0-9]{1,27}$`, kötelező `title`; típus-ellenőrzés (a `subtitle` lehet `false`, tömbök csak skalárokat tartalmazhatnak); **hosszkorlátok** a sémával egyezően (a csonkolás explicit és naplózott); **vezérlő- és bidi-felülíró karakterek eltávolítása** (U+0000–001F, U+007F–009F, U+202A–202E, U+2066–2069), UTF-8 érvényesség, NFC.
 - **Hibatűrés / áramkör-megszakító:** ha az érvénytelen elemek aránya meghalad egy küszöböt (pl. 5%), vagy a séma lényegesen eltér, a futás **leáll, semmi sem publikálódik**, nem-nulla kilépési kóddal. A **kanári**: ha egy sorozatoldal 0 azonosítót ad, az „elrendezés megváltozott" hiba, nem „üres sorozat".
 - **Korlátok:** sorozat-lapozás ≤100 oldal, futásonkénti kérés-költségkeret, kérések közti szünet, `flock`.
 - **A HTML-kivágás** (sorozatoldal): jelölőkeresés a PHP `extract_ids`-hez hasonlóan, **rögzített valós mintákon (golden fixture)** tesztelve; a lapozólink kódolása a PHP `urlencode`-dal egyezik, `page=0 ≡ page=1`, az utolsó utáni oldal üres *(mérve, UP-8)*.
 - **Időzítés:** daily 8 óránként, weekly naponta (mint a PHP-ban); a systemd timer indítja, nincs HTTP-s cron.
+
+### 9.1 Borítóképek
+
+**Eldöntve (D3):** a képeket a Go bináris szolgálja ki, **helyben tárolt fájlból**. A statikus tartalom (CSS, logó, betűtípus, helyettesítő kép) az exe-be fordítva (`embed`). **A borítóképek az exe-be nem fordíthatók**, mert az ingest naponta újakat tölt le, az exe viszont build-időben készül: ezért a hoszt `data/images/` könyvtárába kerülnek (az adatbázis mellé, ugyanúgy a hoszt felhasználó menti).
+
+**Mért (2026-11-05, 5 minta + 1 ismeretlen azonosító):**
+- URL: `https://nemzetiarchivum.hu/images/m3/<program_id>`, `image/jpeg`, 8 058 – 40 747 bájt (átlag ≈ 24,5 KB), 280×210 – 720×608 px, `Cache-Control: max-age=86400`.
+- **Ismeretlen azonosítóra is `HTTP 200`**, 393 bájtos `text/html` (egy „nem található” HTML-darab), **nem kép** → a státuszkód nem elég, a tartalmat **ellenőrizni kell**.
+- A válasz sütit is állít (`Set-Cookie: MtvaArchivumToken=deleted…`); az ingest kliens **nem tárol sütit**.
+- Tárolás-becslés (extrapoláció, nem mért nagy mintán): ~24,5 KB × 50 000 program ≈ 1,2 GB átméretezés nélkül.
+
+**Letöltés és feldolgozás (terv):**
+1. Csak érvényes `program_id`-ra, a hoszt-allowlisten át, böngésző User-Agenttel; kérések között szünet; **futásonkénti képkeret** (pl. legfeljebb 300 kép, legújabb elöl), így a kezdeti feltöltés fokozatosan történik.
+2. **Ellenőrzés:** méretplafon (pl. 2 MiB, `io.LimitReader`); a tartalom első bájtjai **JPEG-et** jelezzenek (`FF D8 FF`), nem a `Content-Type` fejléc; `image.DecodeConfig` a **méretek** ellenőrzésére a dekódolás előtt (pl. oldalanként ≤ 4096 px, ≤ 12 megapixel: tömörítési-bomba ellen).
+3. **Megtisztítás:** a standard `image/jpeg` memóriabiztos dekóderével **dekódolás, majd újrakódolás** (kiesik az EXIF/megjegyzés, a fájl végére fűzött adat, a poliglot-trükk). Opcionális átméretezés (pl. ≤ 480 px széles): a standard könyvtárban nincs átméretező, ehhez egyszerű dobozszűrőt kell írni (D12).
+4. Írás `images/<program_id>.jpg.tmp` → `fsync` → `rename`. Siker: `image_state = 1`. Ha az upstream a „nem található” HTML-t adja: `image_state = 2` (később, pl. 30 nap múlva újrapróbálható). Átmeneti hiba: `image_state` marad 0, a következő futás újrapróbálja; **képhiba sosem állítja meg a futást**.
+
+**Kiszolgálás:** `GET /img/{program_id}.jpg`: az azonosító szigorú szabályos kifejezéssel validált; a fájl megnyitása **`os.OpenRoot`**-tal (Go ≥ 1.24, helyi: 1.26.9), amely **kizárja az útvonal-bejárást és a szimbolikus linkes kitörést**; `http.ServeContent`; a `Content-Type` **rögzítetten** `image/jpeg`, `nosniff`; `Cache-Control: public, max-age=86400`. Ha nincs kép (`image_state ≠ 1` vagy hiányzik a fájl), a beágyazott helyettesítő kép jön. A weben így **nincs kimenő kérés**, az `img-src 'self'`.
+
+**Jogi megjegyzés (a felhasználó döntése, D13):** a helyi tárolás a harmadik fél borítóképeinek **másolata**, nem csak hivatkozás. Ez szerzői jogi/ToS szempontból több, mint a hotlinkelés; a döntés és a felelősség a felhasználóé (SEC-10 kiterjesztése).
 
 ## 10. SQLite keményítés
 
@@ -249,6 +274,9 @@ A kiadás feltétele, hogy **mind** teljesüljön (mindegyik automatizálható):
 | S15 | Az image nem tartalmaz OS-csomagot (scratch), `trivy`/`grype` 0 OS-sebezhetőséget jelez | image-vizsgálat |
 | S16 | Paritás: a PHP-s és a Go-s változat ugyanazokra a (rögzített) keresésekre ugyanazt a találati halmazt adja (ismert eltérések dokumentálva) | összehasonlító teszt a közös fixture-ökön |
 | S17 | Külső szkenner (OWASP ZAP baseline) a futó konténeren nem jelez közepes+ riasztást | kézi/CI |
+| S18 | **Kép-fixture-ök:** nem-JPEG tartalom `200` státusszal (pl. a „nem található” HTML), óriás méretek (tömörítési bomba), csonka JPEG, fájl végére fűzött adat, EXIF-fel teli kép → mind elutasítva vagy megtisztítva, a futás nem áll le, nincs pánik | fixture-teszt |
+| S19 | **`/img/` bejárás-teszt a SAJÁT szerverünkön:** `..`, kódolt `%2e%2e`, `%00`, szimbolikus link az `images/`-ben, túl hosszú és hibás azonosító → mind 404, soha nem olvas a könyvtáron kívülről | integrációs teszt |
+| S20 | A web konténer **nulla kimenő kérést** indít (fut `--network none` mellett, a képekkel együtt) | konténeres smoke teszt |
 
 ## 14. Kísérleti eredmények (mérve, 2026-11-05)
 
@@ -267,6 +295,8 @@ Kísérlet: `docs/spikes/sqlite-hardening.go.txt` (Go 1.26.9, rootless podman 5.
 | Atomi csere: régi `immutable` kapcsolat | régi pillanatkép; újranyitva az új adat |
 | Fájl tulajdonos `--userns=keep-id` mellett | a hoszt felhasználó |
 | Beépülő modulok | **4** |
+| Borítókép az upstreamtől | `image/jpeg`, 8–41 KB (átlag ≈ 24,5 KB), 280–720 px széles; `Cache-Control: max-age=86400` |
+| Ismeretlen azonosító képe | **`HTTP 200` + 393 B `text/html`** (nem kép) → tartalom-ellenőrzés kötelező |
 | Beszúrás + FTS, 100 000 szintetikus sor | 75 s (csak az egyszeri teljes import releváns) |
 | Adatbázis-méret, 100 000 szintetikus sor (~1,2 KB szöveg/sor) | 425 MB (≈3,5× a szöveg) |
 | Keresés, szintetikus, 98%-os találati arány | 200–400 ms (**legrosszabb eset; valós adaton újramérendő**) |
@@ -277,10 +307,10 @@ Kísérlet: `docs/spikes/sqlite-hardening.go.txt` (Go 1.26.9, rootless podman 5.
 
 | Fázis | Tartalom | Kapu |
 |---|---|---|
-| **0 – igazolás** | valós adaton (a régi dump vagy a friss gyűjtés) FTS-szemantika és késleltetés összevetése a PHP-val | p95 keresési idő elfogadható; az ékezet/kis-nagybetű viselkedés dokumentálva; döntés a `modernc` vs `ncruces` driverről |
+| **0 – igazolás** | **nincs régi adat (D6)**: a friss gyűjtésből (kb. 1,2 ezer sor, a PHP-s tesztfuttatáson mérve) származó valós adaton, és a szintetikus korpusszal a növekedésre extrapolálva az FTS-szemantika és a késleltetés összevetése a PHP-val | p95 keresési idő elfogadható; az ékezet/kis-nagybetű viselkedés dokumentálva; döntés a `modernc` vs `ncruces` driverről |
 | **1 – mag** | `internal/store` (séma, authorizer, publikálás), `internal/upstream` (kliens + validáció), `m3 ingest daily`, fixture-ök rögzítése az élő API-ból | S4, S11, S12, S13 |
 | **2 – web** | `m3 serve`: sablonok (magyar UI), fejlécek, rate limit, lapozás, `?nyers`; saját betű/ikon | S5–S10 |
-| **3 – weekly + import** | sorozatoldal-kivágás, `m3 ingest weekly/item/refresh`, `m3 import` a régi adatra | S16 |
+| **3 – weekly + képek** | sorozatoldal-kivágás, `m3 ingest weekly/item/refresh`, **borítókép-letöltés és -feldolgozás** ([9.1](#91-borítóképek)), `/img/` kiszolgálás | S16, S18, S19 |
 | **4 – csomagolás** | Containerfile, Quadlet egységek, cloudflared, mentési rend, README (magyar) | S2, S3, S15 |
 | **5 – keményítés** | CSP böngészőben, fuzz, `govulncheck`, ZAP, külső felülvizsgálat | S1, S14, S17 |
 | **6 – átállás** | a PHP kód eltávolítása a branchről, `master`-be olvasztás, a régi dokumentáció lezárása | minden kapu zöld |
@@ -291,17 +321,20 @@ Az **ajánlásom** az első helyen; döntésig ez az alapértelmezés.
 
 | # | Kérdés | Ajánlás |
 |---|---|---|
-| D1 | **`/add` (kérésre felvétel)?** | **v1-ben nincs.** A web így tényleg csak olvasó. Pótlás: `m3 ingest item M3-…` a hoszton. Ha később kell: külön, kizárólag írható „várólista" könyvtár + szigorú validáció (ez gyengíti a „csak olvasó web" garanciát) |
+| D1 | **`/add` (kérésre felvétel)?** | **ELDÖNTVE: nem kell** (felhasználó, 2026-11-05). A web így tényleg csak olvasó. Marad a hoszton futtatható `m3 ingest item M3-…` |
 | D2 | `?nyers` nyers nézet megmaradjon? | igen (nyilvános adat, paritás) |
-| D3 | Borítóképek: az `nemzetiarchivum.hu`-ról közvetlenül (mint a PHP-ban), vagy nincs kép? | közvetlen betöltés `no-referrer`-rel, a CSP `img-src` csak erre az egy hosztra; adatvédelmi kompromisszum (az M3 látja a látogatók IP-jét). Képproxy **nem**, mert növeli a támadási felületet |
+| D3 | Borítóképek | **ELDÖNTVE: a Go bináris szolgálja ki helyben tárolt fájlból** (felhasználó, 2026-11-05); a statikus tartalom az exe-be fordítva, a dinamikus borítóképek a `data/images/`-ben ([9.1](#91-borítóképek)). Az M3 így nem látja a látogatókat |
 | D4 | CSV/gz export legyen-e (`m3-db.csv.gz`)? | igen, az ingest generálja a data könyvtárba; a web csak rögzített nevű fájlt szolgál ki (nincs könyvtárlistázás); a CSV-injection escape kötelező |
 | D5 | A szöveges keresés minimuma 3 karakter? | igen (trigram korlát), UI üzenettel |
-| D6 | A régi adat importja: megvan a régi `m3-db.gz`/CSV? | ha igen, `m3 import`; ha nem, a mai ablakból indulunk (OPS-4) |
+| D6 | A régi adat importja | **ELDÖNTVE: nincs régi adat** (felhasználó, 2026-11-05) → nincs `m3 import`, üres adatbázisról indulunk (OPS-4 megerősítve) |
 | D7 | HTML gyorsítótár: `max-age=60`? | igen, a Cloudflare cache-szabállyal együtt |
 | D8 | Modulútvonal és bináris név | `github.com/py-snake/m3-keresheto-archivum`, bináris: `m3` |
 | D9 | PHP kód sorsa a branchen | marad referenciaként a 6. fázis végéig, azután törlés |
 | D10 | Licenc | **AGPL-3.0 marad** (a Go-s port az eredeti logikájának származéka; az eredeti szerzői jog fennmarad) |
 | D11 | Hol fut? | rootless podman, a hoszt felhasználó alatt; a `/srv/m3/data` helye a hoszt felhasználó döntése |
+| D12 | Képek átméretezése? | igen, legfeljebb ~480 px szélesre, JPEG újrakódolással (kisebb tárhely és gyorsabb oldal); egy kis dobozszűrő kell hozzá, mert a standard könyvtárban nincs. A tényleges méret/minőség a 3. fázisban mérendő |
+| D13 | A harmadik fél borítóképeinek helyi másolata (szerzői jog/ToS) | a felhasználó felelőssége; **eldöntendő**, mielőtt nyilvánosan elérhetővé tesszük |
+| D14 | A böngésző User-Agent karbantartása | **eldöntve:** böngésző UA, konfigurálható; a verziót időnként frissíteni kell (a PHP-ban Chrome/155 a helyi Chromiumból) |
 
 ## 17. Tervezett repó-elrendezés (a `go` branchen)
 
@@ -312,6 +345,7 @@ internal/config/                     # környezeti változók (egyetlen hely)
 internal/store/                      # SQLite: séma, authorizer, olvasó/író, atomi publikálás
 internal/upstream/                   # kliens (allowlist), validáció, parserek (JSON + sorozatoldal HTML)
 internal/ingest/                     # daily/weekly/item/refresh
+internal/images/                     # letöltés-ellenőrzés, dekódolás/újrakódolás, atomi írás; os.OpenRoot alapú kiszolgálás
 internal/web/                        # handlerek, middleware (fejlécek, rate limit), sablonok
 web/templates/*.html  web/static/    # beágyazott (embed); saját betű/ikon
 tests/fixtures/                      # rögzített valós upstream válaszok + rosszindulatú fixture-ök
