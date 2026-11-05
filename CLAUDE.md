@@ -1,12 +1,12 @@
 # CLAUDE.md – AI munkafüzet (élő dokumentum)
 
 > **Ezt a fájlt a Claude Code minden session elején automatikusan betölti. Ez az egyetlen „igazság forrása" a projekt állapotáról.**
-> Minden session köteles: (1) elolvasni, (2) a munka közben frissen tartani, (3) a végén a [Változásnapló](#14-változásnapló)-ba egy sort írni.
+> Minden session köteles: (1) elolvasni, (2) a munka közben frissen tartani, (3) a végén a [Változásnapló](#15-változásnapló)-ba egy sort írni.
 > Frissítési szabályok: [0. fejezet](#0-hogyan-tartsd-frissen-ezt-a-fájlt).
 
 - **Utolsó teljes ellenőrzés (élő rendszerek + konténeres végpont-teszt ellen):** 2026-11-05
-- **Kódállapot (`master`):** a PHP-verzió **lezárva és commitolva** (2026-11-05), konténerben tesztelve. Push nem történt.
-- **Aktuális fázis:** a `go` branchen a **Go-s teljes kiváltás tervezése** (lásd `docs/GO-DESIGN.md` a `go` branchen). A `master` a PHP-referencia.
+- **Branch:** `go` (a `master`-ből indult). A `master` a **lezárt, tesztelt PHP-verzió** (3 commit, push nem történt); ez a branch a PHP **teljes Go-s kiváltásának** tervezése és megvalósítása.
+- **Aktuális fázis:** **TERV KÉSZ, kód még nincs.** Olvasd el: [docs/GO-DESIGN.md](docs/GO-DESIGN.md) és a lenti [14. fejezetet](#14-a-go-branch). A következő lépés a felhasználó döntése a D1–D11 kérdésekről, majd a 0. fázis.
 
 ---
 
@@ -17,7 +17,7 @@
 3. Élő rendszeren mérsz → a mért tényhez mindig írd oda a **dátumot**. Dátum nélküli „tény" gyanús.
 4. Kódra **függvény/fájl névvel** hivatkozz, ne sorszámmal (a sorszámok gyorsan elavulnak).
 5. Döntést a **felhasználó** hoz; a [9. fejezetben](#9-telepítési-és-architektúra-tanács-és-nyitott-döntések) csak rögzítsd, ne dönts helyette.
-6. A session végén: frissítsd a fejléc dátumait és a [Változásnaplót](#14-változásnapló).
+6. A session végén: frissítsd a fejléc dátumait és a [Változásnaplót](#15-változásnapló).
 
 ## 1. Munkaszabályok (a felhasználó utasításai)
 
@@ -27,7 +27,10 @@
 | **UI és README magyarul** | felhasználó, 2026-11-05 |
 | Ez a fájl magyarul van (a felhasználó olvassa); az azonosítók és kódrészletek angolok | döntés, 2026-11-05 |
 | A SEC/BUG hibák javítása a PHP kódban **engedélyezett** (az előző „ne szerkeszd" szabályt a felhasználó feloldotta) | felhasználó, 2026-11-05 |
-| Commit/push csak kifejezett kérésre | alapértelmezett |
+| **A `go` branchen az elsődleges szempont a biztonság** (a felhasználó: „akkor felel meg, ha feltörhetetlen”). Ezt őszintén kezeljük: feltörhetetlenség nem garantálható; a [GO-DESIGN 2. fejezete](docs/GO-DESIGN.md#2-mit-jelent-itt-a-feltörhetetlen) írja le, mit ígérünk és mit nem | felhasználó, 2026-11-05 |
+| A Go futás: **podman, egyetlen statikus bináris, SQLite fájl a hoszt lemezén**, hogy a hoszt felhasználó menthesse | felhasználó, 2026-11-05 |
+| Go-ban **stdlib az elsődleges**; új modul csak indoklással (jelenleg 4 beépülő modul) | terv, 2026-11-05 |
+| Commit/push: a felhasználó kérésére. A `master` PHP-lezárását a felhasználó kérte („véglegesítsd”), ezért commitoltam; **push nem történt** | felhasználó, 2026-11-05 |
 | A `system/` (CI3 keretrendszer) mappához nem nyúlunk | konvenció |
 | Teszteléshez a repó **másolatát** használd (ne szennyezd a munkafát: `curl -o` stb. mindig scratchpadbe) | tanulság, 2026-11-05 |
 
@@ -295,7 +298,8 @@ Kiesés szimulálása: `podman exec -e https_proxy=http://127.0.0.1:1 m3web … 
 
 ## 12. Jelenlegi teendőlista (prioritás szerint)
 
-1. [ ] A felhasználó döntése a [9.4](#94-nyitott-kérdések-a-felhasználónak) kérdésekről.
+1. [ ] A felhasználó döntése a [GO-DESIGN 16. fejezet](docs/GO-DESIGN.md#16-nyitott-döntések-a-felhasználónak) kérdéseiről (D1–D11; a 9.4 PHP-s kérdéseit ez felváltja).
+1. [ ] Go 0. fázis: valós adaton FTS-szemantika és késleltetés mérése (kell hozzá a régi dump, vagy a friss gyűjtés: `php index.php cron weekly` a PHP-s podmanban).
 2. [ ] Régi DB-dump felkutatása (OPS-4).
 3. [ ] Opcionális a PHP-ban: FULLTEXT index + InnoDB migráció (SEC-6). A Go-s változat ezt kiváltja.
 
@@ -303,10 +307,30 @@ Kiesés szimulálása: `podman exec -e https_proxy=http://127.0.0.1:1 m3web … 
 
 `index.php` (m3_env, production alap), `.htaccess`, `application/config/{config,constants,database,routes}.php`, `controllers/{App,Cron}.php`, `models/M3.php`, `helpers/{curl,parser}_helper.php`, `views/{cron,head,list,search}.php`, `docker-compose.yml`, `.gitignore`, `README.md`, új: `tests/run.php`, `deploy/nginx.conf`, `CLAUDE.md`. Törölve: `{daily-program,weekly-program,backup,csv}.cron`, `refresh.cron.disabled`, `.github/workflows/*`.
 
-## 14. Változásnapló
+## 14. A `go` branch
+
+**Tervdokumentum:** [docs/GO-DESIGN.md](docs/GO-DESIGN.md) (architektúra, fenyegetésmodell, séma, keresés, HTTP réteg, ingest, SQLite-keményítés, konténer, elfogadási kritériumok S1–S17, fázisok, nyitott döntések D1–D11). **Kísérlet:** [docs/spikes/sqlite-hardening.go.txt](docs/spikes/sqlite-hardening.go.txt).
+
+**A terv lényege (egy bekezdésben):** egy `m3` bináris két szerepben. `m3 serve` (web): `scratch` image, csak olvasható rootfs és adat-mount, **nincs kimenő hálózat**, nincs írási út, SQLite-kapcsolat `immutable=1` + **deny-by-default authorizerrel**. `m3 ingest` (gyűjtő): külön, időzített egyszeri konténer, az upstreamet validálva olvassa, a `m3.sqlite`-ot **másolaton** módosítja, ellenőrzi, majd **atomi `rename`-mel publikálja** (a publikált fájlt soha nem módosítja helyben, ezért a hoszt felhasználó bármikor biztonságosan menti). Keresés: SQLite **FTS5 trigram** (`case_sensitive 0 remove_diacritics 1`).
+
+**Mért tények (2026-11-05, kísérlet) – ezekre építünk, ne vitasd újra mérés nélkül:**
+- Driver: `github.com/ncruces/go-sqlite3` **v0.36.0** (SQLite 3.54.1, WASM→Go gépi fordítás, **CGO nélkül**); FTS5-öt **kapcsolatonként kell regisztrálni** (`fts5.Register`), az `embed` csomag elavult; beépülő modulok: **4**.
+- FTS5 trigram `remove_diacritics 1`-gyel: ékezet- és kis-nagybetűfüggetlen részszó-keresés; **<3 karakter nem talál**; a felhasználói szöveg mindig idézőjelezett kifejezés.
+- **`ATTACH DATABASE` csak olvasható kapcsolaton is lefut** → authorizer kötelező. Az authorizernek engednie kell: `SELECT`; `READ` az app + FTS árnyéktáblákra; függvények: `match`, `count`, …; `PRAGMA query_only` (olvasás/bekapcsolás) és `PRAGMA data_version` (olvasás). A driver minden lekérdezés előtt olvassa a `query_only`-t.
+- Statikus bináris 9,06 MB; scratch + `--network none --read-only --cap-drop=ALL` + `:ro` mount fut; nincs `-wal`/`-shm`; `--userns=keep-id` mellett a fájl a hoszt felhasználóé.
+- Teljesítmény: **csak szintetikus legrosszabb eset mérve (200–400 ms)**; a valós adaton a p95 a 0. fázis kapuja.
+
+**Nem mért / nyitott:** valós adatra a késleltetés; `modernc.org/sqlite` mint alternatíva; CSP böngészői érvényesítése; Quadlet egységek; a régi adat (OPS-4).
+
+**Fejlesztési környezet a Go-hoz:** Go **1.26.9** (helyi), podman 5.8 rootless, `chromium-browser` és `firefox` megvan (CSP-teszthez). A kísérlet scratchpadje nem tartós; a kísérleti kód a `docs/spikes/`-ban van. Új modul letöltése: `go get` (proxy.golang.org elérhető).
+
+**Munkarend a Go-s fázisokhoz:** minden fázis végén futtasd a [GO-DESIGN 13. fejezet](docs/GO-DESIGN.md#13-tesztelés-és-biztonsági-elfogadási-kritériumok) kapuit, az eredményt írd ide (dátummal), és csak zöld kapu után lépj tovább. A PHP kód referencia marad a 6. fázisig; **ne módosítsd** (a `master`-en van a lezárt állapot).
+
+## 15. Változásnapló
 
 | Dátum | Session | Mi történt |
 |---|---|---|
 | 2026-11-05 | #1 | Projekt feltérképezése; élő ellenőrzés (m3.devs.space, nemzetiarchivum.hu, GitHub); a fájl létrehozása. |
+| 2026-11-05 | #1 (go branch) | `go` branch létrehozva. Kísérlet (ncruces/go-sqlite3 + FTS5 trigram, authorizer, ro mount + atomi csere, scratch konténer), majd [docs/GO-DESIGN.md](docs/GO-DESIGN.md) megírva a mért tényekkel és a D1–D11 nyitott döntésekkel. **Kód még nincs.** |
 | 2026-11-05 | #1 (lezárás) | SEC-14 javítva: `deploy/nginx.conf` allowlist (konténerben mérve), SEC-13 részben (fejlécek, CSP Report-Only), OPS-6: workflow-k törölve, README bővítve; a PHP-verzió commitolva a `master`-re. SEC-12 a PHP-ban elfogadva. |
 | 2026-11-05 | #1 (folytatás) | SEC-1…4, 7…9, 11 és BUG-1…5, 8…10, 12, 14…17 javítása a PHP-ban; tesztelve podmanban (MariaDB 11.8 + PHP 8.5.12) az élő M3 API ellen (daily + weekly, add, rate limit, kiesés-szimuláció, backup visszatöltés, refresh). Új tételek: SEC-11…14, BUG-14…17. BUG-7 korrigálva (az időzóna fix). README frissítve. Telepítési/architektúra-tanács rögzítve a 9. fejezetben. **Nincs commit.** |

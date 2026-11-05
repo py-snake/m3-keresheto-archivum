@@ -1,0 +1,189 @@
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/ncruces/go-sqlite3"
+	"github.com/ncruces/go-sqlite3/driver"
+	"github.com/ncruces/go-sqlite3/ext/fts5"
+)
+
+func must(err error) {
+	if err != nil {
+		fmt.Println("ERROR:", err)
+		os.Exit(1)
+	}
+}
+
+func open(dsn string) *sql.DB {
+	db, err := driver.Open(dsn, func(c *sqlite3.Conn) error { return fts5.Register(c) })
+	must(err)
+	return db
+}
+
+var words = strings.Fields("béke szigete vadászkutyák magyarország film sorozat történelem dokumentum színház zene mesél századunk főtér határátkelő eszék kolozsvár forradalom emlékezünk restaurált játékfilm rendező operatőr színész vers dal tánc népművészet természet utazás család gyerek")
+
+func text(r *rand.Rand, n int) string {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		b.WriteString(words[r.Intn(len(words))])
+		b.WriteByte(' ')
+	}
+	return b.String()
+}
+
+func main() {
+	switch os.Args[1] {
+	case "bench": // synthetic corpus of N rows, ~1 kB of text each
+		n := 100000
+		path := os.Args[2]
+		os.Remove(path)
+		db := open("file:" + path)
+		db.SetMaxOpenConns(1)
+		_, err := db.Exec(`create table p(id integer primary key, program_id text unique, title text, description text, genre text, creators text) strict`)
+		must(err)
+		_, err = db.Exec(`create virtual table f using fts5(title, description, genre, creators, content='p', content_rowid='id', tokenize='trigram case_sensitive 0 remove_diacritics 1')`)
+		must(err)
+		r := rand.New(rand.NewSource(1))
+		t0 := time.Now()
+		tx, _ := db.Begin()
+		for i := 0; i < n; i++ {
+			title, desc := text(r, 3), text(r, 120)
+			res, err := tx.Exec(`insert into p(program_id,title,description,genre,creators) values(?,?,?,?,?)`, fmt.Sprintf("M3-%010d", i), title, desc, text(r, 2), text(r, 3))
+			must(err)
+			id, _ := res.LastInsertId()
+			_, err = tx.Exec(`insert into f(rowid,title,description,genre,creators) select id,title,description,genre,creators from p where id=?`, id)
+			must(err)
+		}
+		must(tx.Commit())
+		fmt.Printf("insert %d rows + fts: %s\n", n, time.Since(t0).Round(time.Millisecond))
+		st, _ := os.Stat(path)
+		fmt.Printf("db size: %.1f MB\n", float64(st.Size())/1e6)
+		for _, q := range []string{"vadászkutya", "BEKE SZIGET", "főtér", "zzzz", "kolozsvár eszék"} {
+			t0 = time.Now()
+			var c int
+			must(db.QueryRow(`select count(*) from f where f match ?`, `"`+q+`"`).Scan(&c))
+			t1 := time.Since(t0)
+			t0 = time.Now()
+			rows, err := db.Query(`select p.id from f join p on p.id=f.rowid where f match ? order by p.id desc limit 10`, `"`+q+`"`)
+			must(err)
+			k := 0
+			for rows.Next() {
+				k++
+			}
+			rows.Close()
+			fmt.Printf("  %-18q total=%-6d count %-9s page(10) %s\n", q, c, t1.Round(time.Microsecond), time.Since(t0).Round(time.Microsecond))
+		}
+		t0 = time.Now()
+		var c int
+		db.QueryRow(`select count(*) from p where title like '%vadászkutya%' or description like '%vadászkutya%'`).Scan(&c)
+		fmt.Printf("  for comparison, LIKE '%%x%%' on title+description: %d hits in %s\n", c, time.Since(t0).Round(time.Millisecond))
+		db.Close()
+
+	case "auth": // web-role connection with a deny-by-default authorizer
+		path := os.Args[2]
+		db, err := driver.Open("file:"+path+"?mode=ro&immutable=1&_pragma=query_only(1)&_pragma=trusted_schema(0)", func(c *sqlite3.Conn) error {
+			if err := fts5.Register(c); err != nil {
+				return err
+			}
+			return c.SetAuthorizer(func(action sqlite3.AuthorizerActionCode, a3, a4, schema, inner string) sqlite3.AuthorizerReturnCode {
+				if os.Getenv("AUTHDEBUG") != "" {
+					fmt.Printf("     auth action=%d a3=%q a4=%q schema=%q inner=%q\n", action, a3, a4, schema, inner)
+				}
+				switch action {
+				case sqlite3.AUTH_PRAGMA:
+					// the driver itself reads/sets query_only; nothing else (never turning it off)
+					if a3 == "query_only" && (a4 == "" || a4 == "1") {
+						return sqlite3.AUTH_OK
+					}
+					if a3 == "data_version" && a4 == "" { // read-only, used internally by FTS5
+						return sqlite3.AUTH_OK
+					}
+				case sqlite3.AUTH_SELECT:
+					return sqlite3.AUTH_OK
+				case sqlite3.AUTH_READ:
+					// only the application tables and the FTS5 shadow tables of "f"
+					if a3 == "p" || a3 == "f" || strings.HasPrefix(a3, "f_") {
+						return sqlite3.AUTH_OK
+					}
+				case sqlite3.AUTH_FUNCTION:
+					switch a4 {
+					case "match", "count", "lower", "upper", "bm25", "snippet", "highlight", "min", "max", "coalesce", "length", "substr":
+						return sqlite3.AUTH_OK
+					}
+				}
+				return sqlite3.AUTH_DENY
+			})
+		})
+		must(err)
+		db.SetMaxOpenConns(1)
+		try := func(name, q string, args ...any) {
+			rows, err := db.Query(q, args...)
+			if err == nil {
+				for rows.Next() {
+				}
+				err = rows.Err()
+				rows.Close()
+			}
+			fmt.Printf("  %-34s -> %v\n", name, err)
+		}
+		try("select (allowed)", `select count(*) from p`)
+		try("fts match (allowed)", `select p.id from f join p on p.id=f.rowid where f match ? limit 5`, `"bék"`)
+		try("attach", `attach database '/data/evil.db' as e`)
+		try("write", `insert into p(program_id) values('M3-X')`)
+		try("pragma write", `pragma journal_mode=wal`)
+		try("load_extension fn", `select load_extension('x')`)
+		try("writefile-ish fn", `select readfile('/etc/passwd')`)
+		try("sqlite_master read", `select * from sqlite_master`)
+		try("pragma read", `pragma table_info(p)`)
+
+	case "ro": // read-only open of an existing file; must not be able to write, must not create side files
+		path := os.Args[2]
+		db := open("file:" + path + "?mode=ro&immutable=1&_pragma=query_only(1)")
+		var c int
+		must(db.QueryRow(`select count(*) from p`).Scan(&c))
+		fmt.Println("ro: rows =", c)
+		_, err := db.Exec(`insert into p(program_id) values('M3-X')`)
+		fmt.Println("ro: write attempt ->", err)
+		_, err = db.Exec(`create table x(a)`)
+		fmt.Println("ro: ddl attempt   ->", err)
+		_, err = db.Exec(`attach database '/tmp/evil.db' as e`)
+		fmt.Println("ro: attach attempt->", err)
+		ents, _ := os.ReadDir(filepath.Dir(path))
+		for _, e := range ents {
+			fmt.Println("   dir entry:", e.Name())
+		}
+		db.Close()
+
+	case "swap": // writer builds a new file next to the old one and renames it over; reader notices the new inode
+		path := os.Args[2]
+		ino := func() uint64 { st, _ := os.Stat(path); return st.Sys().(*syscall.Stat_t).Ino }
+		rd := open("file:" + path + "?mode=ro&immutable=1")
+		var c int
+		must(rd.QueryRow(`select count(*) from p`).Scan(&c))
+		fmt.Println("reader before swap: rows =", c, "inode", ino())
+		tmp := path + ".new"
+		data, _ := os.ReadFile(path)
+		must(os.WriteFile(tmp, data, 0o644))
+		w := open("file:" + tmp)
+		w.SetMaxOpenConns(1)
+		_, err := w.Exec(`insert into p(program_id,title) values('M3-SWAP','new row')`)
+		must(err)
+		w.Close()
+		must(os.Rename(tmp, path))
+		fmt.Println("after rename, inode", ino())
+		must(rd.QueryRow(`select count(*) from p`).Scan(&c))
+		fmt.Println("old handle (immutable) still sees rows =", c, "(expected: old snapshot)")
+		rd.Close()
+		rd = open("file:" + path + "?mode=ro&immutable=1")
+		must(rd.QueryRow(`select count(*) from p`).Scan(&c))
+		fmt.Println("reopened handle sees rows =", c)
+	}
+}
