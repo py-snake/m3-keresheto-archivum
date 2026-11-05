@@ -39,6 +39,38 @@ ini_set('date.timezone', 'Europe/Budapest');
 
 /*
  *---------------------------------------------------------------
+ * ENVIRONMENT VARIABLE HELPER
+ *---------------------------------------------------------------
+ *
+ * Reads a setting from the process environment, $_SERVER or $_ENV
+ * (php-fpm / Apache SetEnv expose variables in different places).
+ * All deployment specific values (database, base URL, secrets) come
+ * from here, so no secret has to be committed or rewritten in files.
+ */
+if ( ! function_exists('m3_env'))
+{
+	function m3_env($name, $default = '')
+	{
+		$candidates = array(
+			getenv($name),
+			isset($_SERVER[$name]) ? $_SERVER[$name] : FALSE,
+			isset($_ENV[$name]) ? $_ENV[$name] : FALSE
+		);
+
+		foreach ($candidates as $value)
+		{
+			if (is_string($value) && $value !== '')
+			{
+				return $value;
+			}
+		}
+
+		return $default;
+	}
+}
+
+/*
+ *---------------------------------------------------------------
  * APPLICATION ENVIRONMENT
  *---------------------------------------------------------------
  *
@@ -54,7 +86,7 @@ ini_set('date.timezone', 'Europe/Budapest');
  *
  * NOTE: If you change these, also change the error_reporting() code below
  */
-	define('ENVIRONMENT', isset($_SERVER['CI_ENV']) ? $_SERVER['CI_ENV'] : 'development');
+	define('ENVIRONMENT', m3_env('CI_ENV', 'production')); // safe default: never fall back to development
 
 /*
  *---------------------------------------------------------------

@@ -22,6 +22,7 @@
 	</IfModule>
 
 </IfModule>
-<IfModule mod_env.c>
-	SetEnv CI_ENV development
-</IfModule>
+# CI_ENV defaults to 'production' (see index.php). For local development set it explicitly:
+#<IfModule mod_env.c>
+#	SetEnv CI_ENV development
+#</IfModule>

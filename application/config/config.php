@@ -23,7 +23,8 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 | a PHP script and you can easily do that on your own.
 |
 */
-$config['base_url'] = 'http://localhost/';
+// Set BASE_URL in production (e.g. https://example.com/). The localhost default is for development only.
+$config['base_url'] = m3_env('BASE_URL', 'http://localhost/');
 
 /*
 |--------------------------------------------------------------------------
@@ -225,7 +226,7 @@ $config['allow_get_array'] = TRUE;
 | your log files will fill up very fast.
 |
 */
-$config['log_threshold'] = 2;
+$config['log_threshold'] = (int) m3_env('LOG_THRESHOLD', (ENVIRONMENT === 'production') ? 1 : 2);
 
 /*
 |--------------------------------------------------------------------------
@@ -529,4 +530,5 @@ $config['rewrite_short_tags'] = FALSE;
 | Comma-separated:	'10.0.1.200,192.168.5.0/24'
 | Array:		array('10.0.1.200', '192.168.5.0/24')
 */
-$config['proxy_ips'] = '';
+// Comma separated IPs/CIDRs of the reverse proxies allowed to set X-Forwarded-For (e.g. the nginx container subnet).
+$config['proxy_ips'] = m3_env('TRUSTED_PROXIES', '');

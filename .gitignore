@@ -34,3 +34,9 @@ user_guide_src/cilexer/pycilexer.egg-info/*
 *.sublime-project
 /tests/tests/
 /tests/results/
+
+# generated exports (written by /cron/backup and /cron/csv)
+public/m3-db.gz
+public/m3-db.csv.gz
+public/*.tmp
+backup/*.txt

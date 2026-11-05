@@ -24,9 +24,13 @@ else
 		</thead>
 		<tbody class="mdc-data-table__content">
 			<?php foreach ($items as $i):
-				$duration = explode(':', $i['duration']);
-				$h = intval($duration[0]) ? intval($duration[0]).'ó ' : '';
-				$m = intval(isset($duration[1])) ? intval($duration[1]).'p' : '';
+				// duration is HH:MM:SS:FF (the last part is frames)
+				$duration = array_map('intval', explode(':', (string) $i['duration']));
+				$dh = isset($duration[0]) ? $duration[0] : 0;
+				$dm = isset($duration[1]) ? $duration[1] : 0;
+				$ds = isset($duration[2]) ? $duration[2] : 0;
+				$h = $dh ? $dh.'ó ' : '';
+				$m = ($dh || $dm) ? $dm.'p' : ($ds ? $ds.'mp' : '');
 			?>
 			<tr class="mdc-data-table__row">
 				<td class="mdc-data-table__cell mdc-data-table__cell--numeric">

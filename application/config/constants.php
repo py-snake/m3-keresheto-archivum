@@ -83,3 +83,24 @@ defined('EXIT_USER_INPUT')     OR define('EXIT_USER_INPUT', 7); // invalid user 
 defined('EXIT_DATABASE')       OR define('EXIT_DATABASE', 8); // database error
 defined('EXIT__AUTO_MIN')      OR define('EXIT__AUTO_MIN', 9); // lowest automatically-assigned error code
 defined('EXIT__AUTO_MAX')      OR define('EXIT__AUTO_MAX', 125); // highest automatically-assigned error code
+
+/*
+|--------------------------------------------------------------------------
+| M3 upstream (Nemzeti Archivum) endpoints and cron throttle intervals
+|--------------------------------------------------------------------------
+*/
+defined('MINIMUM_INTERVAL_DAILY')  OR define('MINIMUM_INTERVAL_DAILY', 3600 * 8);
+defined('MINIMUM_INTERVAL_WEEKLY') OR define('MINIMUM_INTERVAL_WEEKLY', 3600 * 24);
+
+defined('M3_DAILY_PROGRAM_URL') OR define('M3_DAILY_PROGRAM_URL', 'https://nemzetiarchivum.hu/api/m3/v3/daily_program');
+defined('M3_PROGRAM_GUIDE_URL') OR define('M3_PROGRAM_GUIDE_URL', 'https://nemzetiarchivum.hu/api/m3/v3/program_guide?days=30');
+defined('M3_WEEKLY_URL')        OR define('M3_WEEKLY_URL', 'https://nemzetiarchivum.hu/m3/get-open');
+defined('M3_ITEM_INFO')         OR define('M3_ITEM_INFO', 'https://nemzetiarchivum.hu/api/m3/v3/item?id=');
+defined('M3_SERIES_INFO')       OR define('M3_SERIES_INFO', 'https://nemzetiarchivum.hu/m3/open?series=');
+defined('M3_COLLECTION_INFO')   OR define('M3_COLLECTION_INFO', 'https://nemzetiarchivum.hu/m3/get-open?collection=');
+
+// Safety caps against runaway loops if the upstream layout changes.
+defined('M3_MAX_SERIES_PAGES')  OR define('M3_MAX_SERIES_PAGES', 100);
+defined('M3_ADD_MAX_IDS')       OR define('M3_ADD_MAX_IDS', 10);
+defined('M3_ADD_RATE_LIMIT')    OR define('M3_ADD_RATE_LIMIT', 6);  // requests ...
+defined('M3_ADD_RATE_WINDOW')   OR define('M3_ADD_RATE_WINDOW', 60); // ... per this many seconds, per client IP

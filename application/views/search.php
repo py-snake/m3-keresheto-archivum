@@ -46,7 +46,7 @@ window.addEventListener('load', () => {
 	form.addEventListener('submit', async ev => {
 		ev.preventDefault();
 		searchButton.disabled = true;
-		searchField.readonly = true;
+		searchField.readOnly = true;
 		form.classList.add('searching');
 
 		const icon = form.querySelector('.mdc-text-field__icon');
@@ -56,9 +56,13 @@ window.addEventListener('load', () => {
 		const currVal = searchField.value.trim();
 		if (currVal.length > 3 && currVal.toUpperCase().startsWith('M3-')) {
 			try {
-				const res = await fetch('<?php echo site_url('cron/add?id='); ?>' + encodeURIComponent(currVal));
-				const resText = await res.text();
-				console.log('cron/add', resText);
+				// the server only accepts same-origin POST requests here
+				const res = await fetch('<?php echo site_url('add'); ?>', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+					body: new URLSearchParams({ id: currVal })
+				});
+				console.log('add', res.status, await res.text());
 			} catch (err) {
 				console.error(err);
 			}
