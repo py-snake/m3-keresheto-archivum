@@ -10,6 +10,12 @@
  */
 define('BASEPATH', __DIR__.'/../system/');
 
+// index.php defines m3_env() in the real application; the tests only need the defaults.
+if ( ! function_exists('m3_env'))
+{
+	function m3_env($name, $default = '') { return $default; }
+}
+
 require __DIR__.'/../application/helpers/parser_helper.php';
 require __DIR__.'/../application/helpers/curl_helper.php';
 
