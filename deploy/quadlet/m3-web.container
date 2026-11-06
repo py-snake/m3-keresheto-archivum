@@ -7,8 +7,7 @@ ContainerName=m3-web
 Image=localhost/m3:latest
 Exec=serve
 # only the internal network: the web role never needs to reach out
-# fixed address: nginx proxies to it without DNS, so nginx starts even while m3-web is down
-Network=m3-internal.network:ip=10.89.77.10
+Network=m3-internal.network
 ReadOnly=true
 DropCapability=ALL
 NoNewPrivileges=true

@@ -35,7 +35,9 @@ Network=m3-internal.network
 
 Az nginx konfigurációja: másold a [nginx/m3.conf](nginx/m3.conf) fájlt abba a könyvtárba, amit az nginx `/etc/nginx/conf.d`-ként mountol (nálad: `/srv/web/nginx/conf.d/`), és írd át benne a `server_name`-et a subdomainre.
 
-Az `m3-web` fix címet kap az `m3-internal`-on (`10.89.77.10`), az nginx erre mutat, ezért az nginx **az m3 leállása esetén is elindul** (a látogatók ilyenkor 502-t kapnak, a többi oldalad nem érintett).
+Az nginx az m3-et **névvel** éri el (`m3-web`, a konténer neve az `m3-internal` hálózaton), de a nevet **kérésenként** oldja fel (`resolver` + változó a `proxy_pass`-ban), nem induláskor. Így az nginx **az m3 leállása esetén is elindul és újratölt**: a látogatók 502-t kapnak, a többi oldalad nem érintett, és az m3 visszajövetele után nem kell az nginx-et újratölteni. Egy sima `proxy_pass http://m3-web:8080` ezt nem tudná: az nginx nem indulna el, amíg a név nem oldható fel.
+
+A `resolver` címe az `m3-internal` hálózat DNS-e, azaz az alhálózat első címe (`10.89.77.1`, lásd `m3-internal.network`). Ellenőrzés: `podman exec nginx getent hosts m3-web` (futó m3 mellett).
 
 ## 4. Első adat
 
@@ -55,6 +57,7 @@ systemctl --user start m3-web.service
 podman healthcheck run m3-web                         # 0 = rendben
 systemctl --user restart nginx.service                # felveszi az új hálózatot és a konfigot
 podman exec nginx nginx -t
+podman exec nginx getent hosts m3-web                 # látnia kell az m3-web címét
 systemctl --user enable --now m3-ingest-daily.timer m3-ingest-weekly.timer m3-export.timer
 systemctl --user start m3-export.service              # egyszer, hogy legyen letölthető fájl
 ```
