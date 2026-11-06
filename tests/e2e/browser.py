@@ -8,7 +8,7 @@ and clicks, and checks the results, the URL, the number of requests, and that th
 no Content Security Policy violation and no script error. Only the Python standard library is used.
 Exit code 0 = all checks passed.
 """
-import base64, hashlib, http.client, json, os, shutil, socket, struct, subprocess, sys, tempfile, time, urllib.parse, urllib.request
+import base64, hashlib, html, http.client, json, os, re, shutil, socket, struct, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8080").rstrip("/")
 PORT = 9333
@@ -133,15 +133,21 @@ def check(name, ok, detail=""):
         print(f"  FAIL  {name} {detail}")
 
 
-def fragment_total(query):
-    """What the server itself says for the same search (the reference the page must agree with)."""
+def fragment_html(query):
     with urllib.request.urlopen(f"{BASE}/?{query}&reszlet=1", timeout=15) as r:
-        body = r.read().decode()
-    marker = ' találat</div>'
-    if marker not in body:
-        return None
-    head = body.split(marker)[0]
-    return head[head.rindex('>') + 1:] + ' találat'
+        return r.read().decode()
+
+
+def fragment_total(query):
+    """What the server itself says for the same search (the reference the page must agree with):
+    the text of the result header, e.g. "457 találat · 1. oldal / 46"."""
+    m = re.search(r'list__total">([^<]*)</div>', fragment_html(query))
+    return m.group(1).strip() if m else None
+
+
+def fragment_first_title(query):
+    m = re.search(r'class="card__name">([^<]*)</span>', fragment_html(query))
+    return html.unescape(m.group(1)) if m else None
 
 
 def type_into(page, selector, text):
@@ -178,8 +184,8 @@ def main():
         page.call("Page.navigate", url=BASE + "/")
         check("the page loads", page.wait_for("document.readyState === 'complete' && !!document.getElementById('search-form')"))
         initial = total_text(page)
-        check("the full list is shown at the start", initial.endswith("találat"), initial)
-        check("the instant search script ran (the form is enhanced)", page.js("typeof window.fetch === 'function' && !!document.querySelector('script[src=\"/static/search.js\"]')"))
+        check("the full list is shown at the start", "találat" in initial, initial)
+        check("the instant search script ran (the form is enhanced)", page.js("typeof window.fetch === 'function' && !!document.querySelector('script[src^=\"/static/search.js\"]')"))
 
         # 1. typing replaces the results without a page reload
         page.js("window.__still_here = 42")
@@ -223,6 +229,53 @@ def main():
         want = fragment_total("mufaj=" + urllib.parse.quote_plus(genre or "") + "&elerheto=1")
         ok = page.wait_for(f"(() => {{ const t = document.querySelector('.list__total'); return t ? t.textContent.trim() === {json.dumps(want)} : {json.dumps(want is None)}; }})()")
         check("ticking 'only available' narrows the results", ok, f"want {want!r} got {total_text(page)!r}")
+
+        # 4b. the new controls: focus rules, sorting, page size, jump to page
+        # headless Chromium reports "pointer: none"; pretend to be a desktop with a mouse (and later a phone)
+        def with_pointer(kind, url):
+            ident = page.call("Page.addScriptToEvaluateOnNewDocument", source=f"""(() => {{ const real = window.matchMedia.bind(window);
+                window.matchMedia = (q) => (q.replace(/\\s/g, '') === '(pointer:fine)' ? {{matches: {json.dumps(kind == 'fine')}, media: q, addEventListener() {{}}, removeEventListener() {{}}}} : real(q)); }})()""")["identifier"]
+            page.call("Page.navigate", url=url)
+            page.wait_for("document.readyState === 'complete' && !!document.getElementById('search-form')")
+            page.pump(0.5)
+            focused = page.js("document.activeElement && document.activeElement.id")
+            page.call("Page.removeScriptToEvaluateOnNewDocument", identifier=ident)
+            return focused
+
+        check("the bare start page puts the cursor into the search field (mouse devices)", with_pointer("fine", BASE + "/") == "search-field")
+        check("a touch device never gets the cursor (no keyboard on the start page)", with_pointer("coarse", BASE + "/") != "search-field")
+        check("a mouse device gets no forced focus on a results page either", with_pointer("fine", BASE + "/?kereses=film") != "search-field")
+        page.call("Page.navigate", url=BASE + "/?kereses=film&db=10")
+        page.wait_for("document.readyState === 'complete' && !!document.getElementById('search-form')")
+        page.pump(0.5)
+        check("a results page does not grab the focus (no keyboard pops up on phones)", page.js("document.activeElement && document.activeElement.id") != "search-field")
+        check("the sort and page size selects are visible, not inside the advanced panel", page.js("(() => { const s = document.querySelector('select[name=rendezes]'); return !!s && !s.closest('details') && !!document.querySelector('select[name=db]') && !document.querySelector('select[name=db]').closest('details'); })()"))
+
+        pages_text = total_text(page)
+        pager_ok = page.js("!!document.querySelector('.pager__jump input[name=oldal]')")
+        check("the pager has a jump-to-page box", pager_ok, pages_text)
+        if pager_ok:
+            page.js("""(() => { const f = document.querySelector('.pager__jump'); f.querySelector('input[name=oldal]').value = '3'; f.requestSubmit(); })()""")
+            check("jumping to page 3 opens /3 with the search kept",
+                  page.wait_for("location.pathname === '/3' && location.search.indexOf('kereses=film') >= 0 && location.search.indexOf('db=10') >= 0 && !!document.querySelector('.pager__btn--current')"), page.js("location.href"))
+            check("page 3 is marked as the current one", page.js("(document.querySelector('.pager__btn--current') || {textContent: ''}).textContent.trim()") == "3")
+            check("the redirect left no 'oldal' parameter behind", "oldal" not in page.js("location.search"))
+
+        page.call("Page.navigate", url=BASE + "/?kereses=film&db=10")
+        page.wait_for("document.readyState === 'complete' && !!document.getElementById('search-form')")
+        page.events.clear()
+        page.js("""(() => { const s = document.querySelector('select[name=rendezes]'); s.value = 'cim_n'; s.dispatchEvent(new Event('change', {bubbles: true})); })()""")
+        want = fragment_first_title("kereses=film&db=10&rendezes=cim_n")
+        check("choosing a sort order re-sorts the results at once",
+              page.wait_for(f"(() => {{ const t = document.querySelector('.card__name'); return !!t && t.textContent.trim() === {json.dumps(want)} && location.search.indexOf('rendezes=cim_n') >= 0; }})()"),
+              f"want first title {want!r}, got {page.js('(document.querySelector(\'.card__name\') || {textContent: \'\'}).textContent.trim()')!r}")
+
+        page.js("""(() => { const s = document.querySelector('select[name=db]'); s.value = '50'; s.dispatchEvent(new Event('change', {bubbles: true})); })()""")
+        want_total = fragment_total("kereses=film&db=50&rendezes=cim_n")
+        check("choosing 50 per page shows more cards and says so",
+              page.wait_for(f"document.querySelectorAll('.card').length > 10 && document.querySelector('.list__total').textContent.trim() === {json.dumps(want_total)}"),
+              f"cards={page.js('document.querySelectorAll(\'.card\').length')} want {want_total!r}")
+        check("the page size is in the address bar", "db=50" in page.js("location.search"))
 
         # 5. hostile text is shown as text, never run
         type_into(page, "#search-field", "<img src=x onerror=window.__pwn=1>")

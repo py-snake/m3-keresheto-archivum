@@ -50,8 +50,10 @@ Kérésre felvétel a weben **nincs**: a webes oldalról semmi nem ír az adatb�
 ## Keresés
 
 * **Egyszerű keresés:** ékezet- és kis-nagybetűfüggetlen részszó-keresés a cím, alcím, leírás, készítők, közreműködők, műfaj és adatlap mezőiben (legalább 3 karakter). **1–2 karakter csak a címben keres.** `M3-…` azonosítók (vesszővel) azonosító szerint keresnek.
-* **Részletes keresés** (a „Részletes keresés és rendezés" panel): külön mezők a címre, alcímre, leírásra, készítőkre és közreműködőkre (legalább 3 karakter), **műfaj** (a valós műfajok listája darabszámmal), **évtartomány**, „csak a kiemeltek", „csak a most elérhetők". A mezők együtt szűrnek (ÉS).
-* **Rendezés:** legutóbb felvett (alap), legrégebbi, év szerint (újabb/régebbi elöl), cím szerint (A–Z / Z–A, az ékezeteket figyelmen kívül hagyva), megjelenés szerint.
+* **Részletes keresés** (a „Részletes keresés" panel): külön mezők a címre, alcímre, leírásra, készítőkre és közreműködőkre (legalább 3 karakter), **műfaj** (a valós műfajok listája darabszámmal), **évtartomány**, „csak a kiemeltek", „csak a most elérhetők". A mezők együtt szűrnek (ÉS).
+* **Rendezés:** a keresőmező alatt, mindig látható legördülő: legutóbb felvett (alap), legrégebbi, év szerint (újabb/régebbi elöl), cím szerint (A–Z / Z–A, az ékezeteket figyelmen kívül hagyva), megjelenés szerint. A választás azonnal érvényesül.
+* **Lapozás:** a találatok oldalanként 20 elemet mutatnak (alap), a **„Találat / oldal"** legördülővel 10, 20, 50 vagy 100 választható. A lapozó kompakt (első, utolsó és a mostani körüli oldalak, „Előző" / „Következő"), alatta **„Ugrás a(z) N oldalra"** mező: ez JavaScript nélkül is működik (a szerver a `/?…&oldal=N` címet a megszokott `/N?…` címre irányítja át, a keresés minden szűrőjét megtartva). A listán túli oldalszám az utolsó oldalra visz.
+* **Telefonon és szűk képernyőn** a találatok kártyák: kis bélyegkép a cím és az elérhetőség mellett, a leírás alatta teljes szélességben; a lapozó „Előző | 3 / 40 | Következő" alakú, nagy, ujjal könnyen eltalálható gombokkal. A kereső mező csak asztali gépen, egérrel kapja meg magától a kurzort, **a kezdőlapon**: telefonon nem nyílik meg magától a billentyűzet, és lapozáskor sem.
 * **Gépelés közbeni keresés:** a találatok gépelés közben frissülnek (kb. 300 ms késleltetéssel, egyetlen kéréssel a gyors gépelésre). Ez egy opcionális kiegészítés: JavaScript nélkül az űrlap sima GET kéréssel ugyanazt tudja.
 * A lenyitott részletek az összes tárolt mezőt, az elérhetőségi előzményt és a „Kiemelt" jelvényt mutatják; az oldal alján látszik a lekérdezés ideje.
 
@@ -164,6 +166,22 @@ UPSTREAM_PROXY_INSECURE=1
 * A proxy jelszava nem kerül a naplóba vagy hibaüzenetbe. Jelszót ne tégy a parancssorba; használj `podman secret`-et (lásd a Quadlet egységeket).
 * A környezeti `HTTP_PROXY` / `HTTPS_PROXY` változókat a program **szándékosan nem használja**: csak az `UPSTREAM_PROXY` számít.
 * Ha a proxy nem érhető el, a program **nem esik vissza közvetlen kapcsolatra**, hanem hibával leáll.
+
+## Gyorsítótárazás
+
+A weboldal a böngészőknek és egy esetleges CDN-nek (pl. Cloudflare) a következő élettartamokat adja a `Cache-Control` fejlécben, így a képeket és a stílusfájlokat az eredeti szerver gyakorlatilag csak egyszer szolgálja ki:
+
+| Tartalom | Élettartam |
+|---|---|
+| Borítóképek (`/img/<azonosító>.jpg`) | **1 év**, `immutable` (a kép egyszer készül, és soha nem íródik felül) |
+| Statikus fájlok a tartalom lenyomatával (`/static/app.css?v=<hash>`, `search.js`, `m3.min.css`, a logó, a helykitöltő) | **1 év**, `immutable`: ha a fájl tartalma változik, új címet kap |
+| Statikus fájl hamis vagy hiányzó `v` értékkel | 1 nap |
+| Találati oldalak (HTML) | 60 másodperc |
+| Hiányzó kép vagy fájl (404) | nem tárolható (`no-store`) |
+
+A helykitöltő és a saját borító **két külön cím** (`/static/placeholder.svg?v=…` és `/img/<azonosító>.jpg`), ezért egy hosszan tárolt helykitöltő nem maradhat bent olyan műsornál, amelyik közben saját borítót kapott: az oldal ilyenkor egyszerűen az új címre hivatkozik. Az oldal HTML-je rövid ideig él, így ez egy percen belül érvényesül.
+
+A fejlécet az alkalmazás állítja, az nginx változtatás nélkül továbbadja. A tényleges gyorsítótár a böngésző és (ha van) a CDN, az nginx magában nem tárol. Cloudflare mellett a `.jpg`, `.css`, `.js`, `.svg` és `.png` fájlokat alapból tárolja, a HTML-t nem. Az „egyszer szolgálja ki" állítás közelítés: a CDN a ritkán kért elemeket az élettartam lejárta előtt is eldobhatja, és több adatközpont külön-külön kérhet (a *Tiered Cache* beállítás ezt csökkenti).
 
 ## Biztonsági tulajdonságok
 

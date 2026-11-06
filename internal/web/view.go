@@ -1,10 +1,14 @@
 package web
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"net/url"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,10 +22,14 @@ import (
 
 // Paging.
 const (
-	PageSize = 10
-	// MaxPage bounds how deep a visitor can page (10 000 results).
+	// DefaultPageSize is the number of results per page when the visitor does not choose.
+	DefaultPageSize = 20
+	// MaxPage bounds how deep a visitor can page (the store caps the result count at 10 000).
 	MaxPage = 1000
 )
+
+// pageSizes are the results-per-page choices ("db" in the URL); anything else is ignored.
+var pageSizes = []int{10, DefaultPageSize, 50, 100}
 
 var budapest = mustLocation("Europe/Budapest")
 
@@ -40,6 +48,17 @@ type pagerItem struct {
 	Href    string
 	Rel     string
 	Current bool
+	Gap     bool // "…" between two non-adjacent page numbers
+}
+
+// pagerView is everything the pager template needs. Hidden carries the current search as hidden
+// fields of the "jump to page" form, so that the jump keeps every filter (the template escapes them).
+type pagerView struct {
+	Items      []pagerItem
+	Prev, Next *pagerItem
+	Current    int
+	Pages      int
+	Hidden     []kv
 }
 
 // filters are the search form values, already validated.
@@ -49,6 +68,15 @@ type filters struct {
 	YearFrom, YearTo                                            int
 	OnlyPlayable, OnlyHighlighted                               bool
 	Sort                                                        string // URL slug, "" = default
+	PerPage                                                     int    // one of pageSizes, 0 = DefaultPageSize
+}
+
+// perPage is the number of results per page.
+func (f filters) perPage() int {
+	if f.PerPage == 0 {
+		return DefaultPageSize
+	}
+	return f.PerPage
 }
 
 type sortOption struct {
@@ -77,13 +105,14 @@ type pageData struct {
 	History map[string][]store.Change
 	Total   int
 	Capped  bool
-	Pager   []pagerItem
+	Pager   *pagerView
 	Today   time.Time
 
 	Genres       []store.GenreCount
 	YearMin      int
 	YearMax      int
 	SortOptions  []sortOption
+	PageSizes    []sortOption // results-per-page choices (Value "" = default)
 	AdvancedOpen bool
 
 	Elapsed    string
@@ -101,10 +130,49 @@ func (d *pageData) sortOptions() []sortOption {
 	return out
 }
 
+// pageSizeOptions are the results-per-page choices for the form; the default one has an empty value so
+// that it never shows up in the URL.
+func (d *pageData) pageSizeOptions() []sortOption {
+	out := make([]sortOption, len(pageSizes))
+	for i, n := range pageSizes {
+		o := sortOption{Value: strconv.Itoa(n), Label: strconv.Itoa(n)}
+		if n == DefaultPageSize {
+			o.Value = ""
+		}
+		o.Selected = n == d.F.perPage()
+		out[i] = o
+	}
+	return out
+}
+
+// staticVersions maps every embedded static file to a short digest of its content. The pages link
+// to /static/<name>?v=<digest>, so a changed file gets a new address and can be cached for a year
+// (browsers and the CDN), while an unchanged one is fetched from the origin only once.
+func staticVersions() (map[string]string, error) {
+	sub, err := fs.Sub(webfs.FS, "static")
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	err = fs.WalkDir(sub, ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := fs.ReadFile(sub, name)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		out[name] = hex.EncodeToString(sum[:])[:10]
+		return nil
+	})
+	return out, err
+}
+
 // parsePages compiles the embedded templates, one template set per page type. Only html/template
 // is used and nothing is ever marked as trusted HTML, so every value is escaped for the context it
 // appears in.
-func parsePages() (map[string]*template.Template, error) {
+func parsePages(versions map[string]string) (map[string]*template.Template, error) {
 	sub, err := fs.Sub(webfs.FS, "templates")
 	if err != nil {
 		return nil, err
@@ -117,6 +185,12 @@ func parsePages() (map[string]*template.Template, error) {
 		"rawColumns": func() []string { return rawColumns },
 		"rawRow":     rawRow,
 		"checked":    checkedLabel,
+		"asset": func(name string) string {
+			if v := versions[name]; v != "" {
+				return "/static/" + name + "?v=" + v
+			}
+			return "/static/" + name
+		},
 	}
 	pages := map[string]*template.Template{}
 	for _, name := range []string{"index", "export", "api"} {
@@ -280,52 +354,90 @@ func semi(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "; ", ";"), ";", "; ")
 }
 
-// buildPager returns the page links around the current page. Every link keeps the whole search
-// (params: the form values without the page number); raw adds the bare "nyers" flag.
-func buildPager(current, total int, params url.Values, raw bool) []pagerItem {
-	pages := (total + PageSize - 1) / PageSize
-	pages = min(pages, MaxPage)
+// pagePath is the canonical address of one result page: /N (or / for the first) plus the query.
+func pagePath(page int, q url.Values) string {
+	path := "/"
+	if page > 1 {
+		path = "/" + strconv.Itoa(page)
+	}
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	return path
+}
+
+// pageCount is the number of reachable pages for a result count.
+func pageCount(total, perPage int) int {
+	return min((total+perPage-1)/perPage, MaxPage)
+}
+
+// buildPager returns the pager for the current page, or nil when there is only one page. Every
+// link keeps the whole search (params: the form values without the page number); raw adds the bare
+// "nyers" flag. The window always holds the first and the last page and two pages on each side of
+// the current one; a hole of exactly one page is filled instead of shown as "…".
+func buildPager(current, total, perPage int, params url.Values, raw bool) *pagerView {
+	pages := pageCount(total, perPage)
 	if pages <= 1 {
 		return nil
 	}
-	href := func(page int) string {
-		path := "/"
-		if page > 1 {
-			path = "/" + strconv.Itoa(page)
-		}
-		s := params.Encode()
-		if raw {
-			if s != "" {
-				s += "&"
-			}
-			s += "nyers"
-		}
-		if s != "" {
-			path += "?" + s
-		}
-		return path
+	query := url.Values{}
+	for k, v := range params {
+		query[k] = v
+	}
+	if raw {
+		query["nyers"] = []string{""}
+	}
+	href := func(page int) string { return pagePath(page, query) }
+	item := func(label string, page int, rel string) *pagerItem {
+		return &pagerItem{Label: label, Href: href(page), Rel: rel}
 	}
 
-	var items []pagerItem
-	add := func(label string, page int, rel string) {
-		items = append(items, pagerItem{Label: label, Href: href(page), Rel: rel})
-	}
+	v := &pagerView{Current: current, Pages: pages}
 	if current > 1 {
-		add("«", 1, "start")
-		add("‹", current-1, "prev")
-	}
-	for p := max(1, current-4); p <= min(pages, current+4); p++ {
-		if p == current {
-			items = append(items, pagerItem{Label: strconv.Itoa(p), Current: true})
-		} else {
-			add(strconv.Itoa(p), p, "")
-		}
+		v.Prev = item("Előző", current-1, "prev")
 	}
 	if current < pages {
-		add("›", current+1, "next")
-		add("»", pages, "")
+		v.Next = item("Következő", current+1, "next")
 	}
-	return items
+
+	want := map[int]bool{1: true, pages: true}
+	for p := current - 2; p <= current+2; p++ {
+		if p >= 1 && p <= pages {
+			want[p] = true
+		}
+	}
+	nums := make([]int, 0, len(want))
+	for p := range want {
+		nums = append(nums, p)
+	}
+	sort.Ints(nums)
+	last := 0
+	for _, p := range nums {
+		switch {
+		case last != 0 && p == last+2:
+			v.Items = append(v.Items, *item(strconv.Itoa(last+1), last+1, ""))
+		case last != 0 && p > last+2:
+			v.Items = append(v.Items, pagerItem{Label: "…", Gap: true})
+		}
+		if p == current {
+			v.Items = append(v.Items, pagerItem{Label: strconv.Itoa(p), Current: true})
+		} else {
+			v.Items = append(v.Items, *item(strconv.Itoa(p), p, ""))
+		}
+		last = p
+	}
+
+	keys := make([]string, 0, len(query))
+	for k := range query {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		for _, val := range query[k] {
+			v.Hidden = append(v.Hidden, kv{Key: k, Value: val})
+		}
+	}
+	return v
 }
 
 func b2s(b bool) string {

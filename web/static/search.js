@@ -4,6 +4,14 @@
 (() => {
 	'use strict';
 
+	// Put the cursor into the search field only on the bare start page and only with a mouse-like
+	// pointer. The HTML `autofocus` attribute did this on every page load, so on a phone each page
+	// turn or search popped the on-screen keyboard open again.
+	const field = document.getElementById('search-field');
+	if (field && field.value === '' && location.search === '' && window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+		field.focus();
+	}
+
 	const form = document.getElementById('search-form');
 	const results = document.getElementById('results');
 	const status = document.getElementById('search-status');

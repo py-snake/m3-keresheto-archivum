@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -168,7 +169,7 @@ func TestIndexRendersTheArchive(t *testing.T) {
 	assertSecure(t, "index", resp)
 	for _, want := range []string{
 		"2 találat", "Vadászkutyák", "A béke szigete", "M3-AAA2", "(2. / 5)", "1ó 7p", "Rövid leírás",
-		`src="/img/M3-AAA2.jpg"`, `src="/static/placeholder.svg"`, "Nagy István<br>Kiss Ödön", "egy; kettő",
+		`src="/img/M3-AAA2.jpg"`, `src="/static/placeholder.svg?v=`, "Nagy István<br>Kiss Ödön", "egy; kettő",
 		"📅", "Közzététel dátuma", `lang="hu"`, `action="/"`, `name="kereses"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -182,7 +183,7 @@ func TestIndexRendersTheArchive(t *testing.T) {
 		}
 	}
 	// exactly one script, an external file of this site: no inline script anywhere
-	if n := strings.Count(body, "<script"); n != 1 || !strings.Contains(body, `<script src="/static/search.js" defer></script>`) {
+	if n := strings.Count(body, "<script"); n != 1 || !regexp.MustCompile(`<script src="/static/search\.js\?v=[0-9a-f]{10}" defer></script>`).MatchString(body) {
 		t.Errorf("expected only the instant search script, found %d script tags", n)
 	}
 	// nothing is loaded from another host: only plain links lead there (the M3 page of a program)
@@ -264,7 +265,8 @@ func TestSecurityHeadersOnEveryKindOfResponse(t *testing.T) {
 	}{
 		{"index", "GET", "/", 200},
 		{"head", "HEAD", "/", 200},
-		{"page 2", "GET", "/2", 200},
+		{"page past the end", "GET", "/2", 303},
+		{"jump to a page", "GET", "/?oldal=2", 303},
 		{"unknown", "GET", "/nope", 404},
 		{"deep unknown", "GET", "/a/b/c", 404},
 		{"page zero", "GET", "/0", 404},
@@ -324,21 +326,22 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestPagingLinks(t *testing.T) {
-	e := newEnv(t, nil, many(25)...)
+	e := newEnv(t, nil, many(45)...)
 	_, body := e.get(t, "/?kereses=Film")
-	if !strings.Contains(body, "25 találat") || !strings.Contains(body, `href="/2?kereses=Film"`) || !strings.Contains(body, `href="/3?kereses=Film"`) {
+	if !strings.Contains(body, "45 találat") || !strings.Contains(body, `href="/2?kereses=Film"`) || !strings.Contains(body, `href="/3?kereses=Film"`) {
 		t.Error("pager lacks links that keep the search term")
 	}
 	_, p3 := e.get(t, "/3?kereses=Film")
-	if strings.Count(p3, `class="mdc-data-table__row"`) != 5+1+0 && !strings.Contains(p3, "Film 004") {
+	if strings.Count(p3, `class="card"`) != 5 || !strings.Contains(p3, "Film 004") {
 		t.Error("last page does not hold the oldest 5 items")
 	}
 	if !strings.Contains(p3, `rel="prev"`) || strings.Contains(p3, `rel="next"`) {
 		t.Error("prev/next relations wrong on the last page")
 	}
-	_, beyond := e.get(t, "/9")
-	if !strings.Contains(beyond, "Nincs találat") {
-		t.Error("a page past the end should say there is nothing")
+	// a page past the end leads to the last page instead of an empty list
+	resp, _ := e.get(t, "/9?kereses=Film")
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/3?kereses=Film" {
+		t.Errorf("a page past the end: %d -> %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 }
 
@@ -409,7 +412,7 @@ func TestImagesWithoutAnImagesDirectory(t *testing.T) {
 
 func TestStaticFilesOnly(t *testing.T) {
 	e := newEnv(t, nil)
-	if resp, body := e.get(t, "/static/app.css"); resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/css") || !strings.Contains(body, "m3player") {
+	if resp, body := e.get(t, "/static/app.css"); resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/css") || !strings.Contains(body, ".card") {
 		t.Fatalf("app.css: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 	if resp, _ := e.get(t, "/static/placeholder.svg"); resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/svg+xml" {
@@ -571,24 +574,70 @@ func TestLogsHoldNeitherSearchTermsNorRawAddresses(t *testing.T) {
 	}
 }
 
-func TestPagerWindow(t *testing.T) {
-	items := buildPager(10, 1000, url.Values{"kereses": {`a b&c`}}, true)
+func pagerLabels(v *pagerView) string {
 	var labels []string
-	for _, it := range items {
+	for _, it := range v.Items {
 		labels = append(labels, it.Label)
 	}
-	got := strings.Join(labels, " ")
-	if got != "« ‹ 6 7 8 9 10 11 12 13 14 › »" {
+	return strings.Join(labels, " ")
+}
+
+func TestPagerWindow(t *testing.T) {
+	// 1000 results, 10 per page: 100 pages
+	v := buildPager(10, 1000, 10, url.Values{"kereses": {`a b&c`}}, true)
+	if got := pagerLabels(v); got != "1 … 8 9 10 11 12 … 100" {
 		t.Fatalf("window: %s", got)
 	}
-	if items[1].Href != "/9?kereses=a+b%26c&nyers" {
-		t.Fatalf("href: %s", items[1].Href)
+	if v.Prev == nil || v.Prev.Href != "/9?kereses=a+b%26c&nyers=" || v.Prev.Rel != "prev" {
+		t.Fatalf("prev: %+v", v.Prev)
 	}
-	if buildPager(1, 5, nil, false) != nil {
+	if v.Next == nil || v.Next.Href != "/11?kereses=a+b%26c&nyers=" || v.Next.Rel != "next" {
+		t.Fatalf("next: %+v", v.Next)
+	}
+	if v.Current != 10 || v.Pages != 100 {
+		t.Fatalf("position: %d/%d", v.Current, v.Pages)
+	}
+
+	// a hole of exactly one page is filled instead of shown as "…"
+	if got := pagerLabels(buildPager(5, 1000, 10, nil, false)); got != "1 2 3 4 5 6 7 … 100" {
+		t.Fatalf("window near the start: %s", got)
+	}
+	if got := pagerLabels(buildPager(6, 1000, 10, nil, false)); got != "1 … 4 5 6 7 8 … 100" {
+		t.Fatalf("window: %s", got)
+	}
+	if v := buildPager(1, 1000, 10, nil, false); v.Prev != nil || v.Next == nil || v.Items[0].Current != true {
+		t.Fatalf("first page: %+v", v)
+	}
+	if v := buildPager(100, 1000, 10, nil, false); v.Next != nil || v.Prev == nil {
+		t.Fatalf("last page: %+v", v)
+	}
+
+	if buildPager(1, 5, 10, nil, false) != nil {
 		t.Fatal("a single page needs no pager")
 	}
-	if p := buildPager(1, 50*1000, nil, false); len(p) == 0 || p[len(p)-1].Href != "/1000" {
-		t.Fatalf("pager must stop at MaxPage: %+v", p[len(p)-1])
+	if v := buildPager(1, 50*1000, 10, nil, false); v == nil || v.Items[len(v.Items)-1].Href != "/1000" {
+		t.Fatalf("pager must stop at MaxPage: %+v", v)
+	}
+	// the page size decides the number of pages
+	if v := buildPager(1, 1000, 100, nil, false); v == nil || v.Pages != 10 {
+		t.Fatalf("pages with 100 per page: %+v", v)
+	}
+}
+
+func TestPagerJumpFormKeepsTheSearch(t *testing.T) {
+	v := buildPager(2, 500, 20, url.Values{"kereses": {`"><x>`}, "mufaj": {"Film"}, "db": {"50"}}, true)
+	got := map[string]string{}
+	for _, h := range v.Hidden {
+		got[h.Key] = h.Value
+	}
+	if got["kereses"] != `"><x>` || got["mufaj"] != "Film" || got["db"] != "50" {
+		t.Fatalf("hidden fields lost the search: %+v", v.Hidden)
+	}
+	if _, ok := got["nyers"]; !ok {
+		t.Fatalf("the raw flag was lost: %+v", v.Hidden)
+	}
+	if _, ok := got["oldal"]; ok {
+		t.Fatal("the jump form must not carry a page number of its own")
 	}
 }
 
@@ -767,8 +816,8 @@ func TestPagerKeepsTheAvailabilityFilter(t *testing.T) {
 	if !strings.Contains(body, `href="/2?elerheto=1&amp;kereses=Film"`) && !strings.Contains(body, `href="/2?kereses=Film&amp;elerheto=1"`) {
 		t.Errorf("pager links drop the filter")
 	}
-	if items := buildPager(1, 30, url.Values{"elerheto": {"1"}, "kereses": {"x"}}, false); !strings.Contains(items[1].Href, "elerheto=1") {
-		t.Errorf("%+v", items)
+	if v := buildPager(1, 30, 10, url.Values{"elerheto": {"1"}, "kereses": {"x"}}, false); v == nil || v.Next == nil || !strings.Contains(v.Next.Href, "elerheto=1") {
+		t.Errorf("%+v", v)
 	}
 }
 

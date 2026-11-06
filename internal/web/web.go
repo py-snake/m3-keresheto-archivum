@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -68,6 +69,7 @@ type Server struct {
 	o        Options
 	pages    map[string]*template.Template
 	static   http.Handler
+	versions map[string]string // content digest of every static file (see staticVersions)
 	limiter  *limiter
 	assets   *limiter
 	anon     *anonymizer
@@ -96,7 +98,11 @@ func New(o Options) (*Server, error) {
 	if o.MaxInFlight <= 0 {
 		o.MaxInFlight = 64
 	}
-	pages, err := parsePages()
+	versions, err := staticVersions()
+	if err != nil {
+		return nil, err
+	}
+	pages, err := parsePages(versions)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +114,7 @@ func New(o Options) (*Server, error) {
 		o:         o,
 		pages:     pages,
 		static:    http.StripPrefix("/static/", http.FileServerFS(noDirs{sub})),
+		versions:  versions,
 		limiter:   newLimiter(o.RateLimit, o.RateBurst, maxTracked, o.Now),
 		assets:    newLimiter(assetRate, assetBurst, maxTracked, o.Now),
 		anon:      &anonymizer{now: o.Now},
@@ -210,6 +217,10 @@ func parseFilters(q url.Values) (f filters, notice string) {
 			f.Sort = o.Value
 		}
 	}
+	// results per page: only the offered sizes, and the default one is never stored in the filters
+	if n, err := strconv.Atoi(strings.TrimSpace(q.Get("db"))); err == nil && n != DefaultPageSize && slices.Contains(pageSizes, n) {
+		f.PerPage = n
+	}
 	return f, notice
 }
 
@@ -251,13 +262,16 @@ func (f filters) params() url.Values {
 	if f.OnlyHighlighted {
 		v.Set("kiemelt", "1")
 	}
+	if f.PerPage != 0 {
+		v.Set("db", strconv.Itoa(f.PerPage))
+	}
 	return v
 }
 
 // advanced reports whether any filter of the "detailed search" panel is set (the panel opens then).
 func (f filters) advanced() bool {
 	return f.Title != "" || f.Subtitle != "" || f.Description != "" || f.Creators != "" || f.Contributors != "" ||
-		f.Genre != "" || f.YearFrom > 0 || f.YearTo > 0 || f.OnlyHighlighted || f.Sort != ""
+		f.Genre != "" || f.YearFrom > 0 || f.YearTo > 0 || f.OnlyHighlighted
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
@@ -273,6 +287,16 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
+	// "Jump to page" form: /?...&oldal=N has no path to carry the number without script, so it is
+	// answered with a redirect to the canonical /N?... address. Only a number is ever used from it,
+	// clamped to the reachable range, so the redirect target is always one of our own page paths.
+	if v := q.Get("oldal"); v != "" && r.PathValue("page") == "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			q.Del("oldal")
+			http.Redirect(w, r, pagePath(min(max(n, 1), MaxPage), q), http.StatusSeeOther)
+			return
+		}
+	}
 	_, raw := q["nyers"]
 	fragment := q.Get("reszlet") == "1" // only the results, for the instant search script
 	f, notice := parseFilters(q)
@@ -293,7 +317,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	default:
 		ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
 		defer cancel()
-		res, err := reader.SearchQuery(ctx, f.query(PageSize, (page-1)*PageSize))
+		res, err := reader.SearchQuery(ctx, f.query(f.perPage(), (page-1)*f.perPage()))
 		switch {
 		case errors.Is(err, store.ErrTermTooShort):
 			data.Notice = "A szöveges szűrőkben legalább " + strconv.Itoa(store.MinTermRunes) + " karakter kell."
@@ -305,8 +329,14 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Belső hiba.", http.StatusInternalServerError)
 			return
 		default:
+			if len(res.Items) == 0 && page > 1 && res.Total > 0 {
+				// a page past the end (e.g. after the result list shrank): go to the last one
+				q.Del("oldal")
+				http.Redirect(w, r, pagePath(pageCount(res.Total, f.perPage()), q), http.StatusSeeOther)
+				return
+			}
 			data.Items, data.Total, data.Capped = res.Items, res.Total, res.Capped
-			data.Pager = buildPager(page, res.Total, f.params(), raw)
+			data.Pager = buildPager(page, res.Total, f.perPage(), f.params(), raw)
 			if f.Term != "" {
 				data.Title = f.Term + " - " + siteTitle
 			}
@@ -329,6 +359,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		data.SortOptions = data.sortOptions()
+		data.PageSizes = data.pageSizeOptions()
 		data.AdvancedOpen = f.advanced()
 		data.Elapsed = fmt.Sprintf("Lekérdezés: %.3f mp", time.Since(start).Seconds())
 	}
@@ -355,22 +386,30 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(buf.Bytes())
 }
 
+// image serves a stored cover. A cover is written once and never replaced (the ingest only fetches
+// programs that have none, and a program's page links to /img/<id>.jpg only once the file exists, while
+// programs without a cover link to the placeholder instead), so the address of a cover can be cached
+// for a year. A missing cover must never be cached: it may arrive a minute later.
 func (s *Server) image(w http.ResponseWriter, r *http.Request) {
+	missing := func() {
+		w.Header().Set("Cache-Control", "no-store")
+		http.NotFound(w, r)
+	}
 	id, ok := strings.CutSuffix(r.PathValue("file"), ".jpg")
 	root := s.imagesRoot()
 	if !ok || root == nil {
-		http.NotFound(w, r)
+		missing()
 		return
 	}
 	f, info, err := images.Open(root, id) // validates the id; cannot leave the directory
 	if err != nil {
-		http.NotFound(w, r)
+		missing()
 		return
 	}
 	defer f.Close()
 	h := w.Header()
 	h.Set("Content-Type", "image/jpeg")
-	h.Set("Cache-Control", "public, max-age=86400")
+	h.Set("Cache-Control", "public, max-age=31536000, immutable")
 	http.ServeContent(w, r, "", info.ModTime(), f)
 }
 
@@ -388,8 +427,23 @@ func (s *Server) imagesRoot() *os.Root {
 	return s.imgRoot
 }
 
+// staticFile serves the embedded files. A request that carries the file's current content digest
+// ("?v=...", which is what the pages link to) may be cached for a year: the address changes with
+// the content. Anything else is cached for a day, and a missing file is not cached at all.
 func (s *Server) staticFile(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	name := strings.TrimPrefix(r.URL.Path, "/static/")
+	current, known := s.versions[name]
+	if !known { // not ours (also directories): answered here, because the file server drops headers on errors
+		w.Header().Set("Cache-Control", "no-store")
+		http.NotFound(w, r)
+		return
+	}
+	switch {
+	case r.URL.Query().Get("v") == current:
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	default:
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+	}
 	s.static.ServeHTTP(w, r)
 }
 
