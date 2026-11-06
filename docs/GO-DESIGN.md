@@ -246,7 +246,7 @@ A kísérlet ezzel a beállítással lefutott: a csak olvasható mountról olvas
 
 ## 12. Ellátási lánc és build
 
-- Go **1.26.x** (helyi: 1.26.9) rögzítve a `go.mod` `toolchain` sorában; build konténerben, **digestre rögzített** `golang` image-ből.
+- Go **1.26.x** (helyi: 1.26.10) rögzítve a `go.mod` `toolchain` sorában; build konténerben, **digestre rögzített** `golang` image-ből.
 - `go.sum` + `GOFLAGS=-mod=readonly`, `go mod verify`; **minden módosítás előtt a függőségi lista felülvizsgálata** (jelenleg 4 beépülő modul; a bővítés indoklást igényel). A standard könyvtár az elsődleges eszköz.
 - CI/helyi kapuk: `go vet`, `staticcheck`, `go test -race`, **`govulncheck ./...`**, rövid fuzz-futások, `go build` reprodukálhatóság (`-trimpath`, `-buildvcs`), SBOM (`go version -m`).
 - A generált SQLite-fordítás nagy (~6 MB forrás) → **nem vendorolunk**; helyette a pinelt verzió + `go.sum` + a modul-proxy ellenőrzőösszeg-adatbázisa.

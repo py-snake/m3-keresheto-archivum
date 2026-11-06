@@ -1,6 +1,6 @@
 module github.com/py-snake/m3-keresheto-archivum
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/ncruces/go-sqlite3 v0.36.0 // indirect

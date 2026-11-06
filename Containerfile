@@ -4,7 +4,7 @@
 # manager, no interpreter, no OS packages. It runs as an unprivileged user.
 
 # The build image is pinned by digest. Update it together with go.mod's Go version.
-FROM docker.io/library/golang:1.26.9-alpine@sha256:397ecc648150dd585f1734dfcd8d1bb4746664e54464191d77ad0ecffaf38bdb AS build
+FROM docker.io/library/golang:1.26.10-alpine@sha256:2173d702003b1a8d17b844191acaeb36e94de46f6cabf2cb27370e151bbce5aa AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOFLAGS=-mod=readonly
 COPY go.mod go.sum ./
