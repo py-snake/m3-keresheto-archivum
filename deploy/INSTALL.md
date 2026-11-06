@@ -19,7 +19,7 @@ podman save localhost/m3:latest | gzip -9 > m3-image.tar.gz
 sha256sum m3-image.tar.gz
 scp m3-image.tar.gz SZERVER:/tmp/
 
-# a szerveren, a futtató felhasználóként (itt john)
+# a szerveren, a futtató felhasználóként (a példákban `m3user`)
 sha256sum /tmp/m3-image.tar.gz                       # egyezzen az előzővel
 gunzip -c /tmp/m3-image.tar.gz | podman load         # Loaded image: localhost/m3:latest
 podman run --rm localhost/m3:latest version          # m3 go1.26.10
@@ -40,12 +40,12 @@ podman build --target m3 -t localhost/m3:latest .
 
 ## 2. Egységek és adatkönyvtár
 
-Az adat helye tetszőleges, de **a futtató felhasználónak (itt `john`) írnia kell**, mert a gyűjtő konténerek az ő azonosítójával (`--userns=keep-id`) írják az `m3.sqlite`-ot, az `images/`-t és az `export/`-ot. A web konténer csak olvassa (`:ro`). Az egységekben az alapértelmezés `%h/m3/data` (a futtató home-ja); ha az alkalmazásaid a `/srv/apps` alatt vannak, ott a helye:
+Az adat helye tetszőleges, de **a futtató felhasználónak (a példákban `m3user`) írnia kell**, mert a gyűjtő konténerek az ő azonosítójával (`--userns=keep-id`) írják az `m3.sqlite`-ot, az `images/`-t és az `export/`-ot. A web konténer csak olvassa (`:ro`). Az egységekben az alapértelmezés `%h/m3/data` (a futtató home-ja); ha az alkalmazásaid a `/srv/apps` alatt vannak, ott a helye:
 
 ```bash
 sudo mkdir -p /srv/apps/m3/data
-sudo chown -R john:john /srv/apps/m3
-sudo chmod 755 /srv/apps/m3 /srv/apps/m3/data      # mások (pl. a mentést végző ubuntu) olvashatják; az adat nyilvános
+sudo chown -R m3user:m3user /srv/apps/m3
+sudo chmod 755 /srv/apps/m3 /srv/apps/m3/data      # mások (pl. a mentést végző adminisztrátor) olvashatják; az adat nyilvános
 
 mkdir -p ~/.config/containers/systemd
 cp deploy/quadlet/*.container deploy/quadlet/*.network ~/.config/containers/systemd/
@@ -101,11 +101,15 @@ systemctl --user start m3-export.service              # egyszer, hogy legyen let
 
 Az nginx újraindítása pár másodperc kiesést okoz a többi oldalnak is.
 
+Az időzítők: a **napi gyűjtés** naponta kétszer fut (kb. 07:00 és 19:00, ±15 perc), a **heti gyűjtés** hetente egyszer, szombaton kb. 03:30-kor, az **export** naponta egyszer. Az ellenőrzés: `systemctl --user list-timers --no-pager | grep m3`.
+
 ## 6. Cloudflare
 
 A tunnel beállításában add hozzá a subdomaint: szolgáltatás **`http://nginx:8080`** (a meglévő cloudflared az nginx-et a `web` hálózaton éri el). Új tunnel vagy új token nem kell.
 
 A Cloudflare-nél: sebességkorlát és bot-védelem a subdomainre; a fiókon 2FA.
+
+**Gyorsítótár.** Az alkalmazás maga küldi a `Cache-Control` fejlécet (borítók és a lenyomatos statikus fájlok 1 év, a HTML 60 mp, lásd a README „Gyorsítótárazás" részét), ezért az nginx-ben nem kell semmit beállítani. A Cloudflare *Caching → Configuration* oldalán a *Browser Cache TTL* maradjon **Respect Existing Headers**, és érdemes bekapcsolni a *Tiered Cache*-t (Smart Tiered Caching, ingyenes): így nem minden adatközpont kéri külön az eredeti szervertől ugyanazt a képet. Egy kép kényszerített frissítése (ha valaha kell): *Caching → Configuration → Purge Cache → Custom Purge*, a kép címével.
 
 ## 7. Ellenőrzés kívülről
 

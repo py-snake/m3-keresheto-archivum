@@ -6,3 +6,10 @@
 *.sqlite-journal
 *.sqlite.new
 .DS_Store
+
+# local-only notes (server layout, real hostnames, usernames): never commit
+*.local.md
+
+# Python bytecode embeds the absolute path of the source file: never commit it
+__pycache__/
+*.pyc

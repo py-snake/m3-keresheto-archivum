@@ -106,7 +106,7 @@ A PHP-oldali hibaosztályok (SEC-1…14, BUG-1…17, lásd [CLAUDE.md](../CLAUDE
 
 ### 5.2 Hoszt-oldali elrendezés és jogosultság
 
-- `/srv/m3/data/` a **hoszt felhasználóé**; a konténerek `--userns=keep-id` módban futnak, így a fájlok tulajdonosa a hoszt felhasználó marad, és `sudo` nélkül menthetők. *(Mérve: a konténerből írt/cserélt fájl `multibox:multibox` tulajdonú maradt.)*
+- `/srv/m3/data/` a **hoszt felhasználóé**; a konténerek `--userns=keep-id` módban futnak, így a fájlok tulajdonosa a hoszt felhasználó marad, és `sudo` nélkül menthetők. *(Mérve: a konténerből írt/cserélt fájl a hoszt felhasználó tulajdonában maradt.)*
 - A web mountja `:ro`; az ingesté `:rw`. A mentés a hoszt dolga: `cp`/`rsync`/`restic` a `m3.sqlite`-ra (vagy a `backups/` könyvtárra).
 
 ## 6. Adatmodell (SQLite)
