@@ -57,6 +57,11 @@ type Config struct {
 	RecheckPerRun int
 	// RecheckDelay is the pause between two recheck requests.
 	RecheckDelay time.Duration
+	// RefreshPerRun is how many stored programs `ingest refresh` re-fetches per run to update their
+	// descriptive data. 0 = disabled (the default).
+	RefreshPerRun int
+	// RefreshDelay is the pause between two refresh requests.
+	RefreshDelay time.Duration
 }
 
 // FromEnv builds a Config from getenv (usually os.Getenv).
@@ -76,6 +81,8 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 		MaxRequests:       2000,
 		RecheckPerRun:     0,
 		RecheckDelay:      3 * time.Second,
+		RefreshPerRun:     0,
+		RefreshDelay:      3 * time.Second,
 	}
 
 	var err error
@@ -121,6 +128,16 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 	}
 	if c.RecheckPerRun, err = integer(getenv("M3_RECHECK_PER_RUN"), c.RecheckPerRun, 0, 500); err != nil {
 		return nil, fmt.Errorf("M3_RECHECK_PER_RUN: %w", err)
+	}
+	if c.RefreshPerRun, err = integer(getenv("M3_REFRESH_PER_RUN"), c.RefreshPerRun, 0, 500); err != nil {
+		return nil, fmt.Errorf("M3_REFRESH_PER_RUN: %w", err)
+	}
+	if v := getenv("M3_REFRESH_DELAY_MS"); v != "" {
+		ms, err := integer(v, 0, 500, 600000)
+		if err != nil {
+			return nil, fmt.Errorf("M3_REFRESH_DELAY_MS: %w", err)
+		}
+		c.RefreshDelay = time.Duration(ms) * time.Millisecond
 	}
 	if v := getenv("M3_RECHECK_DELAY_MS"); v != "" {
 		ms, err := integer(v, 0, 500, 600000)

@@ -51,7 +51,7 @@ func newEnv(t *testing.T, tune func(*Options), ps ...model.Program) *env {
 					}
 				}
 			}
-			if _, _, err := w.RecordAvailability(ctx, ps); err != nil {
+			if _, _, err := w.RecordObservations(ctx, ps); err != nil {
 				return err
 			}
 			for _, p := range ps {

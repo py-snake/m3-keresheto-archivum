@@ -51,6 +51,10 @@ type Ingestor struct {
 	RecheckPerRun int
 	// RecheckDelay is the pause between two recheck requests.
 	RecheckDelay time.Duration
+	// RefreshPerRun is how many stored programs Refresh re-fetches (0 = disabled).
+	RefreshPerRun int
+	// RefreshDelay is the pause between two refresh requests.
+	RefreshDelay time.Duration
 	// Now is the clock (tests).
 	Now func() time.Time
 }
@@ -68,6 +72,8 @@ type Result struct {
 	Observed, Changed int
 	// Rechecked / Gone count the programs Recheck re-queried and the ones the upstream no longer knows.
 	Rechecked, Gone int
+	// Refreshed / Updated count the programs Refresh re-fetched and the ones whose data actually changed.
+	Refreshed, Updated int
 	// BudgetStopped is set when the request budget ended the work early (not an error).
 	BudgetStopped bool
 }
@@ -268,7 +274,7 @@ func (g *Ingestor) store(ctx context.Context, w *store.Writer, source string, it
 		return err
 	}
 	res.New += n
-	obs, chg, err := w.RecordAvailability(ctx, dedupeLast(progs))
+	obs, chg, err := w.RecordObservations(ctx, dedupeLast(progs))
 	if err != nil {
 		return err
 	}
@@ -440,7 +446,97 @@ func (g *Ingestor) Recheck(ctx context.Context) (Result, error) {
 		if err := g.breaker("recheck", rep); err != nil {
 			return err
 		}
-		res.Observed, res.Changed, err = w.RecordAvailability(ctx, dedupeLast(progs))
+		res.Observed, res.Changed, err = w.RecordObservations(ctx, dedupeLast(progs))
+		return err
+	})
+	res.Summary = sum
+	return res, g.finish(res, err)
+}
+
+// Refresh re-fetches the descriptive data of the stored programs whose data was refreshed longest
+// ago and updates them in place (the ingest otherwise keeps the first seen state). The id, the
+// time the program was added and its cover image stay.
+//
+// Like Recheck it only sends requests to refresh data, so it is gentle: it does nothing unless
+// RefreshPerRun is set, sends at most that many requests with a long pause between them and stops
+// at the request budget. A circuit breaker refuses to publish when the upstream's answers would
+// erase the text of many programs (a sign that the upstream is degraded, not that the data changed).
+func (g *Ingestor) Refresh(ctx context.Context) (Result, error) {
+	var res Result
+	if g.RefreshPerRun <= 0 {
+		g.Log.Warn("refresh is disabled: set M3_REFRESH_PER_RUN (a small number such as 30) to enable it")
+		return res, nil
+	}
+	sum, err := g.publisher().Run(ctx, func(ctx context.Context, w *store.Writer) error {
+		ids, err := w.StalestForRefresh(ctx, g.RefreshPerRun)
+		if err != nil {
+			return err
+		}
+		var rep upstream.Report
+		var progs []model.Program
+	loop:
+		for i, id := range ids {
+			if i > 0 {
+				if err := sleep(ctx, g.RefreshDelay); err != nil {
+					return err
+				}
+			}
+			raw, err := g.Up.Item(ctx, id)
+			switch {
+			case errors.Is(err, upstream.ErrBudget):
+				g.Log.Warn("request budget reached; stopping the refresh")
+				res.BudgetStopped = true
+				break loop
+			case errors.Is(err, upstream.ErrNotFound):
+				res.Gone++
+				g.Log.Info("the upstream no longer knows this program", "program_id", id)
+				if err := w.MarkGone(ctx, id); err != nil {
+					return err
+				}
+				continue
+			case err != nil:
+				res.Errors++
+				g.Log.Error("refresh failed", "program_id", id, "err", err)
+				continue
+			}
+			rep.Total++
+			p, _, perr := upstream.ParseProgram(raw)
+			if perr != nil || p.ProgramID != id {
+				rep.Invalid++
+				if len(rep.Samples) < 5 {
+					rep.Samples = append(rep.Samples, id)
+				}
+				if err := w.TouchRefreshed(ctx, id); err != nil { // do not ask for it again at once
+					return err
+				}
+				continue
+			}
+			progs = append(progs, p)
+		}
+		if err := g.breaker("refresh", rep); err != nil {
+			return err
+		}
+
+		wiped := 0
+		var applied []model.Program
+		for _, p := range progs {
+			ch, err := w.UpdateDescriptive(ctx, p)
+			if err != nil {
+				return err
+			}
+			res.Refreshed++
+			if ch.Changed {
+				res.Updated++
+			}
+			if ch.Wiped {
+				wiped++
+			}
+			applied = append(applied, p)
+		}
+		if wiped >= 5 && wiped*5 > len(progs) {
+			return fmt.Errorf("refresh: the answers would erase text from %d of %d programs: refusing to publish", wiped, len(progs))
+		}
+		res.Observed, res.Changed, err = w.RecordObservations(ctx, dedupeLast(applied))
 		return err
 	})
 	res.Summary = sum

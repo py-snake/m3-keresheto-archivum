@@ -32,11 +32,29 @@ CREATE TABLE programs (
   playable_changed_at INTEGER NOT NULL DEFAULT 0,
   window_first        INTEGER NOT NULL DEFAULT 0,
   window_last         INTEGER NOT NULL DEFAULT 0,
-  gone_at             INTEGER NOT NULL DEFAULT 0
+  gone_at             INTEGER NOT NULL DEFAULT 0,
+  -- comparison key of the title (folded, no leading punctuation): sorting and the 1-2 character search
+  title_key           TEXT NOT NULL DEFAULT '',
+  -- set by `ingest refresh` (0 = the descriptive fields still hold the first seen state)
+  refreshed_at        INTEGER NOT NULL DEFAULT 0,
+  -- more upstream fields, LAST OBSERVED like the availability. The upstream does not use collection,
+  -- collection_id, rank and is_catchup at the moment (always empty): they are stored for when it does.
+  is_highlighted      INTEGER NOT NULL DEFAULT 0 CHECK (is_highlighted IN (0, 1)),
+  is_live             INTEGER NOT NULL DEFAULT 0 CHECK (is_live IN (0, 1)),
+  is_catchup          INTEGER NOT NULL DEFAULT 0 CHECK (is_catchup IN (0, 1)),
+  rank                INTEGER NOT NULL DEFAULT 0 CHECK (rank >= 0),
+  collection          TEXT NOT NULL DEFAULT '' CHECK (length(collection) <= 2000),
+  collection_id       TEXT NOT NULL DEFAULT '' CHECK (length(collection_id) <= 255),
+  aired_first         INTEGER NOT NULL DEFAULT 0,  -- earliest / latest broadcast time (unix, UTC)
+  aired_last          INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
 CREATE INDEX programs_image_state_idx ON programs (image_state) WHERE image_state = 0;
 CREATE INDEX programs_recheck_idx ON programs (gone_at, playable_checked_at);
+CREATE INDEX programs_refresh_idx ON programs (gone_at, refreshed_at);
+CREATE INDEX programs_year_idx ON programs (year, id);
+CREATE INDEX programs_title_key_idx ON programs (title_key, id);
+CREATE INDEX programs_released_idx ON programs (released_at, id);
 
 -- Append-only history: one row per CHANGE of the playable flag.
 CREATE TABLE availability_log (
@@ -72,4 +90,4 @@ CREATE TRIGGER programs_au AFTER UPDATE OF title, subtitle, info, extended_info,
   VALUES (new.id, new.title, new.subtitle, new.info, new.extended_info, new.description, new.creators, new.contributors, new.genre);
 END;
 
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;

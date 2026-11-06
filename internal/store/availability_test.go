@@ -86,7 +86,7 @@ func TestMigrationOfAnOldDatabase(t *testing.T) {
 	}
 	// the upgraded database accepts availability observations
 	run(t, dir, time.Unix(2000, 0), func(ctx context.Context, w *Writer) error {
-		obs, _, err := w.RecordAvailability(ctx, []model.Program{avail("M3-OLDA", "x", true, 0, 0)})
+		obs, _, err := w.RecordObservations(ctx, []model.Program{avail("M3-OLDA", "x", true, 0, 0)})
 		if obs != 1 {
 			t.Fatalf("observed %d", obs)
 		}
@@ -108,7 +108,7 @@ func TestAvailabilityUpdatesOnlyAvailabilityAndLogsChanges(t *testing.T) {
 		if _, err := w.InsertPrograms(ctx, []model.Program{first}); err != nil {
 			return err
 		}
-		obs, chg, err := w.RecordAvailability(ctx, []model.Program{first})
+		obs, chg, err := w.RecordObservations(ctx, []model.Program{first})
 		if obs != 1 || chg != 1 {
 			t.Fatalf("first observation: %d/%d", obs, chg)
 		}
@@ -122,7 +122,7 @@ func TestAvailabilityUpdatesOnlyAvailabilityAndLogsChanges(t *testing.T) {
 		if n, err := w.InsertPrograms(ctx, []model.Program{later}); err != nil || n != 0 {
 			t.Fatalf("an existing program must not be inserted again: %d %v", n, err)
 		}
-		obs, chg, err := w.RecordAvailability(ctx, []model.Program{later})
+		obs, chg, err := w.RecordObservations(ctx, []model.Program{later})
 		if obs != 1 || chg != 1 {
 			t.Fatalf("a flipped flag must count as a change: %d/%d", obs, chg)
 		}
@@ -131,7 +131,7 @@ func TestAvailabilityUpdatesOnlyAvailabilityAndLogsChanges(t *testing.T) {
 
 	// an unchanged observation only refreshes the check time
 	run(t, dir, t3, func(ctx context.Context, w *Writer) error {
-		obs, chg, err := w.RecordAvailability(ctx, []model.Program{avail("M3-AAA1", "x", false, 600, 1000)})
+		obs, chg, err := w.RecordObservations(ctx, []model.Program{avail("M3-AAA1", "x", false, 600, 1000)})
 		if obs != 1 || chg != 0 {
 			t.Fatalf("unchanged: %d/%d", obs, chg)
 		}
@@ -140,7 +140,7 @@ func TestAvailabilityUpdatesOnlyAvailabilityAndLogsChanges(t *testing.T) {
 
 	// programs whose item had no playable flag are skipped (not guessed)
 	run(t, dir, t4, func(ctx context.Context, w *Writer) error {
-		obs, _, err := w.RecordAvailability(ctx, []model.Program{prog("M3-AAA1", "x")})
+		obs, _, err := w.RecordObservations(ctx, []model.Program{prog("M3-AAA1", "x")})
 		if obs != 0 {
 			t.Fatalf("an item without the flag was observed")
 		}
@@ -181,7 +181,7 @@ func TestAvailabilityLogHoldsOnlyChanges(t *testing.T) {
 		for i, v := range seq {
 			now = time.Unix(int64(100*(i+1)), 0)
 			a.Playable = v
-			if _, _, err := w.RecordAvailability(ctx, []model.Program{a}); err != nil {
+			if _, _, err := w.RecordObservations(ctx, []model.Program{a}); err != nil {
 				return err
 			}
 		}
@@ -215,11 +215,11 @@ func TestRecheckOrderGoneAndTouch(t *testing.T) {
 		if _, err := w.InsertPrograms(ctx, ps); err != nil {
 			return err
 		}
-		if _, _, err := w.RecordAvailability(ctx, []model.Program{avail("M3-OLD001", "x", true, 0, 0)}); err != nil {
+		if _, _, err := w.RecordObservations(ctx, []model.Program{avail("M3-OLD001", "x", true, 0, 0)}); err != nil {
 			return err
 		}
 		w.now = func() time.Time { return time.Unix(900, 0) }
-		if _, _, err := w.RecordAvailability(ctx, []model.Program{avail("M3-NEW001", "x", true, 0, 0)}); err != nil {
+		if _, _, err := w.RecordObservations(ctx, []model.Program{avail("M3-NEW001", "x", true, 0, 0)}); err != nil {
 			return err
 		}
 		return w.MarkGone(ctx, "M3-GONE01")

@@ -20,7 +20,7 @@ func readerAuthorizer(action sqlite3.AuthorizerActionCode, name3rd, name4th, _, 
 		}
 	case sqlite3.AUTH_FUNCTION:
 		switch name4th {
-		case "match", "count", "min", "max", "coalesce", "length", "lower", "upper":
+		case "match", "count", "min", "max", "coalesce", "length", "lower", "upper", "like":
 			return sqlite3.AUTH_OK
 		}
 	case sqlite3.AUTH_PRAGMA:
@@ -36,7 +36,7 @@ func readerAuthorizer(action sqlite3.AuthorizerActionCode, name3rd, name4th, _, 
 
 func readableTable(name string) bool {
 	switch name {
-	case "programs", "programs_fts":
+	case "programs", "programs_fts", "availability_log":
 		return true
 	case "programs_fts_data", "programs_fts_idx", "programs_fts_docsize", "programs_fts_config", "programs_fts_content":
 		return true

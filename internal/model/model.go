@@ -45,4 +45,16 @@ type Program struct {
 	WindowFirst       int64 // earliest / latest date of the upstream's playable dates (0 = none)
 	WindowLast        int64
 	GoneAt            int64 // unix seconds: the upstream stopped knowing this program (0 = still known)
+
+	// More upstream fields, last observed (see the schema). The upstream does not use Collection,
+	// CollectionID, Rank and IsCatchup at the moment.
+	IsHighlighted bool
+	IsLive        bool
+	IsCatchup     bool
+	Rank          int
+	Collection    string // newline separated
+	CollectionID  string
+	AiredFirst    int64 // earliest / latest broadcast time (unix seconds, 0 = none)
+	AiredLast     int64
+	RefreshedAt   int64 // unix seconds of the last `ingest refresh` (0 = never)
 }

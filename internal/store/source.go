@@ -31,6 +31,15 @@ func NewSource(dir string, log *slog.Logger) *Source {
 	}
 }
 
+// UpdatedAt is the modification time of the published database that is currently served
+// (zero while there is none).
+func (s *Source) UpdatedAt() time.Time {
+	if s.last == nil {
+		return time.Time{}
+	}
+	return s.last.ModTime()
+}
+
 // Reader returns the current reader, or nil while no database has been published yet.
 func (s *Source) Reader() *Reader { return s.cur.Load() }
 

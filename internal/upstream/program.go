@@ -77,6 +77,13 @@ func ParseProgram(raw []byte) (Program, bool, error) {
 		ReleasedAt:       earliest(f["start_playable_dts"], f["start_startTime_dts"]),
 	}
 	p.WindowFirst, p.WindowLast = bounds(f["start_playable_dts"])
+	p.AiredFirst, p.AiredLast = bounds(f["start_startTime_dts"])
+	p.IsHighlighted = jsonBool(f["isHighlighted_b"])
+	p.IsLive = jsonBool(f["is_live"])
+	p.IsCatchup = jsonBool(f["isBroadcastCatchup_b"])
+	p.Rank = jsonInt(f["rank"], 0, 1_000_000_000)
+	p.Collection = lines("collection")
+	p.CollectionID = text("collectionId", maxSeriesID)
 	p.PlayableKnown, p.Playable = jsonStrictBool(f["playable"])
 
 	if !progid.Valid(p.ProgramID) {

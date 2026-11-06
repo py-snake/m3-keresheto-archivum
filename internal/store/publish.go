@@ -66,7 +66,7 @@ func (p *Publisher) Run(ctx context.Context, work func(ctx context.Context, w *W
 	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
 		return sum, err
 	}
-	unlock, err := lockDir(p.Dir)
+	unlock, err := Lock(p.Dir)
 	if err != nil {
 		return sum, err
 	}
@@ -197,7 +197,10 @@ func (p *Publisher) backup(live string, now time.Time) error {
 	return nil
 }
 
-func lockDir(dir string) (unlock func(), err error) {
+// Lock takes the exclusive lock of the data directory (the same one the ingest holds), so that
+// nothing is published while a long read of the published file (the export) is in progress.
+// It returns ErrLocked at once when someone else holds it.
+func Lock(dir string) (unlock func(), err error) {
 	f, err := os.OpenFile(filepath.Join(dir, ".ingest.lock"), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, err

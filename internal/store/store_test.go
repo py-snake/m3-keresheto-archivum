@@ -351,9 +351,10 @@ func TestSearchSemantics(t *testing.T) {
 		}
 	}
 
+	// 1-2 character terms search the titles only; they are no longer refused
 	for _, short := range []string{"a", "ab", "é", "ok"} {
-		if _, err := r.Search(ctx, short, 10, 0); !errors.Is(err, ErrTermTooShort) {
-			t.Errorf("%q: expected ErrTermTooShort, got %v", short, err)
+		if _, err := r.Search(ctx, short, 10, 0); err != nil {
+			t.Errorf("%q: %v", short, err)
 		}
 	}
 }
