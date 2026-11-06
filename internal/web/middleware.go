@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 )
 
@@ -82,7 +83,11 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			http.Error(w, "A szerver jelenleg túlterhelt.", http.StatusServiceUnavailable)
 			return
 		}
-		if !s.limiter.allow(clientIP(r, s.o.TrustedProxies)) {
+		lim := s.limiter
+		if strings.HasPrefix(r.URL.Path, "/static/") || strings.HasPrefix(r.URL.Path, "/img/") {
+			lim = s.assets
+		}
+		if !lim.allow(clientIP(r, s.o.TrustedProxies)) {
 			w.Header().Set("Retry-After", "2")
 			http.Error(w, "Túl sok kérés, kérlek lassíts.", http.StatusTooManyRequests)
 			return

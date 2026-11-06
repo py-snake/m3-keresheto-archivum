@@ -36,6 +36,12 @@ const (
 	queryTimeout = 5 * time.Second
 	maxTracked   = 20000
 
+	// Static files and cover images are cheap and cacheable, but one page view fetches about sixteen
+	// of them at once: they get their own, much larger budget so that an ordinary visit is never
+	// throttled. The (configurable) per-visitor limit applies to searches, pages, the API and downloads.
+	assetRate  = 30.0
+	assetBurst = 150
+
 	// csp allows nothing but same-origin styles, images (the CSS embeds small data: SVGs), the one
 	// same-origin script file and same-origin fetches (instant search). No inline script, no eval,
 	// nothing from another host; frames, plugins, base tag changes and cross-origin form posts are forbidden.
@@ -63,6 +69,7 @@ type Server struct {
 	pages    map[string]*template.Template
 	static   http.Handler
 	limiter  *limiter
+	assets   *limiter
 	anon     *anonymizer
 	inflight chan struct{}
 	now      func() time.Time
@@ -98,6 +105,7 @@ func New(o Options) (*Server, error) {
 		pages:    pages,
 		static:   http.StripPrefix("/static/", http.FileServerFS(noDirs{sub})),
 		limiter:  newLimiter(o.RateLimit, o.RateBurst, maxTracked, o.Now),
+		assets:   newLimiter(assetRate, assetBurst, maxTracked, o.Now),
 		anon:     &anonymizer{now: o.Now},
 		inflight: make(chan struct{}, o.MaxInFlight),
 		now:      o.Now,

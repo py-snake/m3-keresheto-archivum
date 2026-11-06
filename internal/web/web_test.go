@@ -793,3 +793,40 @@ func newTestServer(t *testing.T, s *Server) *httptest.Server {
 	t.Cleanup(srv.Close)
 	return srv
 }
+
+func TestOnePageViewIsNeverThrottled(t *testing.T) {
+	// a real visit loads the page, the style sheets, the script and ten cover images at once: with
+	// the default per-visitor limit (3 requests/second, burst 15) that must not produce a single 429
+	var ps []model.Program
+	for i := 0; i < 10; i++ {
+		p := prog(fmt.Sprintf("M3-V%04d", i), fmt.Sprintf("Látogatás %d", i))
+		p.ImageState = model.ImageStored
+		ps = append(ps, p)
+	}
+	e := newEnv(t, func(o *Options) { o.RateLimit, o.RateBurst = 3, 15 }, ps...)
+	_ = images.Save(filepath.Join(e.dir, "images"), "M3-V0000", []byte("\xff\xd8\xff"))
+
+	if resp, _ := e.get(t, "/"); resp.StatusCode != 200 {
+		t.Fatalf("page: %d", resp.StatusCode)
+	}
+	assets := []string{"/static/m3.min.css", "/static/app.css", "/static/search.js", "/static/logo.png", "/static/placeholder.svg"}
+	for i := 0; i < 10; i++ {
+		assets = append(assets, fmt.Sprintf("/img/M3-V%04d.jpg", i))
+	}
+	for round := 0; round < 3; round++ { // three views in a row
+		for _, a := range assets {
+			if resp, _ := e.get(t, a); resp.StatusCode == 429 {
+				t.Fatalf("%s was throttled in round %d: an ordinary visit must not hit the limit", a, round)
+			}
+		}
+	}
+	// ... while searches stay limited: the burst is 15 pages
+	limited := false
+	for i := 0; i < 40 && !limited; i++ {
+		resp, _ := e.get(t, "/?kereses=Látogatás")
+		limited = resp.StatusCode == 429
+	}
+	if !limited {
+		t.Fatal("searches must still be rate limited")
+	}
+}
