@@ -35,6 +35,8 @@ type Ingestor struct {
 	Dir string
 	// Keep is the number of rotated database backups.
 	Keep int
+	// LockWait is how long a job waits for another ingest or export to finish (0 = fail at once).
+	LockWait time.Duration
 	// Up is the upstream client.
 	Up *upstream.Client
 	// Log receives structured progress messages.
@@ -79,7 +81,7 @@ type Result struct {
 }
 
 func (g *Ingestor) publisher() *store.Publisher {
-	return &store.Publisher{Dir: g.Dir, Keep: g.Keep, Now: g.Now}
+	return &store.Publisher{Dir: g.Dir, Keep: g.Keep, LockWait: g.LockWait, Now: g.Now}
 }
 
 func (g *Ingestor) ratio() float64 {

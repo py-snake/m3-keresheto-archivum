@@ -130,3 +130,21 @@ func TestRequestBudgetAndRecheckDefaultsAreGentle(t *testing.T) {
 		}
 	}
 }
+
+func TestLockWait(t *testing.T) {
+	c, err := FromEnv(env(nil))
+	if err != nil || c.LockWait != 10*time.Minute {
+		t.Fatalf("default: %v %v", c.LockWait, err)
+	}
+	for in, want := range map[string]time.Duration{"0": 0, "30": 30 * time.Second, "3600": time.Hour} {
+		c, err := FromEnv(env(map[string]string{"M3_LOCK_WAIT_SECONDS": in}))
+		if err != nil || c.LockWait != want {
+			t.Errorf("M3_LOCK_WAIT_SECONDS=%s: %v %v", in, c.LockWait, err)
+		}
+	}
+	for _, bad := range []string{"-1", "3601", "x", "1.5"} {
+		if _, err := FromEnv(env(map[string]string{"M3_LOCK_WAIT_SECONDS": bad})); err == nil {
+			t.Errorf("M3_LOCK_WAIT_SECONDS=%s accepted", bad)
+		}
+	}
+}

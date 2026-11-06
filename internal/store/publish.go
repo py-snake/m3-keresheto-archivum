@@ -28,6 +28,10 @@ type Publisher struct {
 	Dir string
 	// Keep is the number of rotated backups of previous databases (0 = none).
 	Keep int
+	// LockWait is how long Run waits for another ingest or export to finish before it gives up
+	// with ErrLocked. 0 = do not wait. Waiting lets two timers that fire at about the same time run
+	// one after the other instead of the second one failing.
+	LockWait time.Duration
 	// MaxNew is a sanity limit for the rows one run may add (0 = default).
 	MaxNew int
 	// Now is the clock (tests).
@@ -66,7 +70,7 @@ func (p *Publisher) Run(ctx context.Context, work func(ctx context.Context, w *W
 	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
 		return sum, err
 	}
-	unlock, err := Lock(p.Dir)
+	unlock, err := LockWait(ctx, p.Dir, p.LockWait)
 	if err != nil {
 		return sum, err
 	}
@@ -213,6 +217,29 @@ func Lock(dir string) (unlock func(), err error) {
 		return nil, err
 	}
 	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
+}
+
+// lockPoll is how often LockWait looks again while the lock is held by someone else.
+const lockPoll = 500 * time.Millisecond
+
+// LockWait is Lock, but when the lock is held it keeps trying for up to wait before it returns
+// ErrLocked (wait <= 0: try once). It returns the context's error when ctx ends first.
+func LockWait(ctx context.Context, dir string, wait time.Duration) (unlock func(), err error) {
+	deadline := time.Now().Add(wait)
+	for {
+		unlock, err = Lock(dir)
+		if !errors.Is(err, ErrLocked) || wait <= 0 {
+			return unlock, err
+		}
+		if !time.Now().Before(deadline) {
+			return nil, ErrLocked
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(lockPoll):
+		}
+	}
 }
 
 func removeWorkFiles(next string) {

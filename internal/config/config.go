@@ -57,6 +57,8 @@ type Config struct {
 	RecheckPerRun int
 	// RecheckDelay is the pause between two recheck requests.
 	RecheckDelay time.Duration
+	// LockWait is how long an ingest or export waits for another one to finish (0 = fail at once).
+	LockWait time.Duration
 	// PublicAPI / PublicExport switch the REST API and the public downloads on (both are on by default).
 	PublicAPI, PublicExport bool
 	// RefreshPerRun is how many stored programs `ingest refresh` re-fetches per run to update their
@@ -83,6 +85,7 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 		MaxRequests:       2000,
 		RecheckPerRun:     0,
 		RecheckDelay:      3 * time.Second,
+		LockWait:          10 * time.Minute,
 		RefreshPerRun:     0,
 		RefreshDelay:      3 * time.Second,
 		PublicAPI:         true,
@@ -148,6 +151,13 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 			return nil, fmt.Errorf("M3_REFRESH_DELAY_MS: %w", err)
 		}
 		c.RefreshDelay = time.Duration(ms) * time.Millisecond
+	}
+	if v := getenv("M3_LOCK_WAIT_SECONDS"); v != "" {
+		sec, err := integer(v, 0, 0, 3600)
+		if err != nil {
+			return nil, fmt.Errorf("M3_LOCK_WAIT_SECONDS: %w", err)
+		}
+		c.LockWait = time.Duration(sec) * time.Second
 	}
 	if v := getenv("M3_RECHECK_DELAY_MS"); v != "" {
 		ms, err := integer(v, 0, 500, 600000)

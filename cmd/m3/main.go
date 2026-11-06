@@ -78,7 +78,7 @@ func run(args []string) int {
 			log.Error("configuration error", "err", err)
 			return 2
 		}
-		m, err := export.Run(ctx, cfg.DataDir, time.Now())
+		m, err := export.RunWait(ctx, cfg.DataDir, time.Now(), cfg.LockWait)
 		if err != nil {
 			log.Error("export failed", "err", err)
 			return 1
@@ -168,7 +168,7 @@ func newIngestor(cfg *config.Config, log *slog.Logger) (*ingest.Ingestor, error)
 		log.Warn("the TLS certificate of the proxy is NOT verified (UPSTREAM_PROXY_INSECURE)")
 	}
 	return &ingest.Ingestor{
-		Dir: cfg.DataDir, Keep: cfg.BackupsKept, Up: up, Log: log,
+		Dir: cfg.DataDir, Keep: cfg.BackupsKept, LockWait: cfg.LockWait, Up: up, Log: log,
 		ImagesPerRun: cfg.ImagesPerRun, ImageMaxWidth: cfg.ImageMaxWidth,
 		RecheckPerRun: cfg.RecheckPerRun, RecheckDelay: cfg.RecheckDelay,
 		RefreshPerRun: cfg.RefreshPerRun, RefreshDelay: cfg.RefreshDelay,

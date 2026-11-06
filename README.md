@@ -74,7 +74,7 @@ sha256sum -c SHA256SUMS && gunzip -k m3-archive.sqlite.gz
 sqlite3 m3-archive.sqlite 'SELECT title, year FROM programs ORDER BY year LIMIT 5;'
 ```
 
-Az export ugyanazt a zárolást használja, mint a gyűjtés: közben nem publikálódik új adatbázis, és minden fájl átnevezéssel, egészben cserélődik. Az adatok az M3 oldaláról származnak; **a nyilvános közzététel jogi felelőssége a te döntésed** (a borítóképek nem részei a letöltésnek). A `M3_PUBLIC_EXPORT=0` kikapcsolja.
+Az export ugyanazt a zárolást használja, mint a gyűjtés (egyszerre csak egy fut, a később induló legfeljebb `M3_LOCK_WAIT_SECONDS` ideig vár, nem bukik el): közben nem publikálódik új adatbázis, és minden fájl átnevezéssel, egészben cserélődik. Az adatok az M3 oldaláról származnak; **a nyilvános közzététel jogi felelőssége a te döntésed** (a borítóképek nem részei a letöltésnek). A `M3_PUBLIC_EXPORT=0` kikapcsolja.
 
 ## API
 
@@ -104,7 +104,7 @@ Az M3 minden műsorhoz jelzi, hogy az adott pillanatban lejátszható-e (`playab
 **Az M3 oldalának kímélése.** A program szándékosan nem „botol":
 * Minden gyűjtő folyamatnak **kemény kérés-plafonja** van (`M3_MAX_REQUESTS`); eléréskor megáll.
 * Kérések között mindig van szünet (`M3_REQUEST_DELAY_MS`), a képek és a műsorok lekérdezése is költségkerettel történik.
-* Az **`ingest recheck` alapból ki van kapcsolva**. Ha mégis kell, kis számmal kapcsold be, pl. `M3_RECHECK_PER_RUN=30` (naponta 30 kérés, 3 másodperces szünettel). A legrégebben ellenőrzött műsorokkal kezd, az eltűnteket nem kérdezi újra.
+* Az **`ingest recheck` alapból ki van kapcsolva**. Ha mégis kell, kis számmal kapcsold be, pl. `M3_RECHECK_PER_RUN=30` (futásonként 30 kérés, 3 másodperces szünettel). A repó hoz hozzá egy kész egységet és időzítőt (`deploy/quadlet/m3-ingest-recheck.*`): félóránként fut, futásonként 30 műsort kérdez le (kb. két perc), ez legfeljebb **naponta 1440 kérés**, vagyis a teljes archívumot kb. naponta körbeéri. Kíméletesebb ütemhez csökkentsd a darabszámot vagy ritkítsd az időzítőt. Az egység `M3_BACKUPS_KEPT=0`-val fut, mert a mentéseket darabszám szerint forgatja a program, és napi 48 futás órák alatt kiforgatná a napi és a heti futás mentéseit. A legrégebben ellenőrzött műsorokkal kezd, az eltűnteket nem kérdezi újra.
 * A megfigyelés nélküli (`Ismeretlen`) műsorok addig azok maradnak, amíg a napi lista vagy a `recheck` nem érinti őket.
 * Az **`ingest refresh` alapból ki van kapcsolva**: a leíró adatok az első látott állapotot őrzik, ezt csak kérésre javítja. Bekapcsolva kis keretű (`M3_REFRESH_PER_RUN`, lassú), a legrégebben frissítettel kezd, és **megtagadja a közzétételt, ha a válaszok sok műsor szövegét törölnék** (az M3 oldala romlott adatot adna); az eltűnt műsorokat megjelöli.
 
@@ -135,6 +135,7 @@ backups/m3-ÉÉÉÉHHNN-….sqlite   a korábbi adatbázisok (alapból 14 db, ke
 | `M3_REQUEST_DELAY_MS` | szünet két kimenő kérés között | `250` |
 | `M3_MAX_REQUESTS` | **kemény plafon**: legfeljebb ennyi kérést küld egy gyűjtő folyamat az M3 felé, utána leáll és a többit a következő futásra hagyja | `2000` |
 | `M3_RECHECK_PER_RUN` | az `ingest recheck` futásonként ennyi műsort kérdez le újra (`0` = kikapcsolva, legfeljebb `500`) | `0` |
+| `M3_LOCK_WAIT_SECONDS` | ennyi ideig vár egy gyűjtés vagy export, ha másik fut (`0` = azonnal hibával leáll), 0–3600 | `600` |
 | `M3_RECHECK_DELAY_MS` | szünet két újraellenőrző kérés között (legalább `500`) | `3000` |
 | `M3_REFRESH_PER_RUN` | az `ingest refresh` futásonként ennyi műsor leíró adatát kérdezi le újra és frissíti (`0` = kikapcsolva, legfeljebb `500`) | `0` |
 | `M3_REFRESH_DELAY_MS` | szünet két frissítő kérés között (legalább `500`) | `3000` |

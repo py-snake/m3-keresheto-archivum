@@ -75,10 +75,16 @@ var csvHeader = []string{
 	"playable_window_first", "playable_window_last", "gone_at", "highlighted", "live", "aired_first", "aired_last", "m3_url",
 }
 
-// Run generates the export of the database in dataDir. now is the generation time.
+// Run generates the export of the database in dataDir. now is the generation time. It fails at
+// once when an ingest holds the lock of the data directory.
 func Run(ctx context.Context, dataDir string, now time.Time) (Manifest, error) {
+	return RunWait(ctx, dataDir, now, 0)
+}
+
+// RunWait is Run, but it waits up to lockWait for a running ingest to finish.
+func RunWait(ctx context.Context, dataDir string, now time.Time, lockWait time.Duration) (Manifest, error) {
 	var m Manifest
-	unlock, err := store.Lock(dataDir)
+	unlock, err := store.LockWait(ctx, dataDir, lockWait)
 	if err != nil {
 		return m, err
 	}

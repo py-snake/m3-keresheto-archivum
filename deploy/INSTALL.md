@@ -101,7 +101,22 @@ systemctl --user start m3-export.service              # egyszer, hogy legyen let
 
 Az nginx újraindítása pár másodperc kiesést okoz a többi oldalnak is.
 
-Az időzítők: a **napi gyűjtés** naponta kétszer fut (kb. 07:00 és 19:00, ±15 perc), a **heti gyűjtés** hetente egyszer, szombaton kb. 03:30-kor, az **export** naponta egyszer. Az ellenőrzés: `systemctl --user list-timers --no-pager | grep m3`.
+Az időzítők: a **napi gyűjtés** naponta kétszer fut (kb. 07:00 és 19:00, ±15 perc), a **heti gyűjtés** hetente egyszer, szombaton kb. 03:30-kor, az **export** naponta egyszer (csak ha a letöltések be vannak kapcsolva), az **újraellenőrzés** (`m3-ingest-recheck`, opcionális) félóránként. Az ellenőrzés: `systemctl --user list-timers --no-pager | grep m3`.
+
+Az **újraellenőrzés** (az elérhetőségi jelző frissítése a legrégebben ellenőrzött műsorokra, félóránként 30 elem) opcionális, a többi gyűjtő mintájára telepíthető:
+
+```bash
+cp ~/m3-src/deploy/quadlet/m3-ingest-recheck.container ~/.config/containers/systemd/
+sed -i 's#%h/m3/data#/srv/apps/m3/data#' ~/.config/containers/systemd/m3-ingest-recheck.container
+# ha a többi gyűjtő proxyt használ, ugyanazt kapcsold be itt is (Secret= és UPSTREAM_PROXY_INSECURE sorok)
+cp ~/m3-src/deploy/quadlet/m3-ingest-recheck.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user start --no-block m3-ingest-recheck.service     # egyszeri próba
+journalctl --user -u m3-ingest-recheck.service -f
+systemctl --user enable --now m3-ingest-recheck.timer
+```
+
+A futás végén a `run finished` sorban `"errors":0`, `"requests"` és `"availability_observed"` értéket kb. 30-at kell látnod (ennyi műsort kérdezett le újra), `"published":true` mellett. A darabszámot és a gyakoriságot az egység `M3_RECHECK_PER_RUN` sorában és az időzítő `OnCalendar` sorában lehet állítani. A gyűjtők nem ütköznek: ha két feladat egyszerre indul, a későbbi vár (legfeljebb 10 percig, `M3_LOCK_WAIT_SECONDS`).
 
 ## 6. Cloudflare
 

@@ -1,0 +1,14 @@
+[Unit]
+Description=Re-check the availability of a few programs every half hour
+
+[Timer]
+# at minute 07 and 37 of every hour, a little off the daily (07:00, 19:00) and weekly (Sat 03:30) runs;
+# if they still overlap, the later job waits for the earlier one
+OnCalendar=*-*-* *:07,37:00
+RandomizedDelaySec=2min
+# no catching up after downtime: one run is enough, not forty-eight
+Persistent=false
+Unit=m3-ingest-recheck.service
+
+[Install]
+WantedBy=timers.target

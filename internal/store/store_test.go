@@ -192,6 +192,121 @@ func TestOnlyOneIngestAtATime(t *testing.T) {
 	}
 }
 
+// The frequent recheck publishes with Keep = 0: it must neither add a backup nor rotate away the
+// backups of the daily and weekly runs.
+func TestKeepZeroLeavesTheBackupsAlone(t *testing.T) {
+	dir := t.TempDir()
+	clock := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	run := func(keep int, id string) {
+		clock = clock.Add(time.Hour)
+		now := clock
+		if _, err := (&Publisher{Dir: dir, Keep: keep, Now: func() time.Time { return now }}).Run(context.Background(), func(ctx context.Context, w *Writer) error {
+			_, err := w.InsertPrograms(ctx, []model.Program{prog(id, "Cím "+id)})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list := func() []string {
+		ents, _ := os.ReadDir(filepath.Join(dir, "backups"))
+		var names []string
+		for _, e := range ents {
+			names = append(names, e.Name())
+		}
+		return names
+	}
+	for i := 0; i < 3; i++ {
+		run(5, fmt.Sprintf("M3-KEEP%d", i))
+	}
+	before := list()
+	if len(before) != 2 { // the first publish had nothing to back up
+		t.Fatalf("setup: %v", before)
+	}
+	for i := 0; i < 20; i++ {
+		run(0, fmt.Sprintf("M3-ZERO%d", i))
+	}
+	if after := list(); strings.Join(after, ",") != strings.Join(before, ",") {
+		t.Fatalf("Keep=0 changed the backups: before %v, after %v", before, after)
+	}
+}
+
+func TestLockWaitWaitsForTheHolder(t *testing.T) {
+	dir := t.TempDir()
+	unlock, err := Lock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(700*time.Millisecond, unlock)
+	start := time.Now()
+	u2, err := LockWait(context.Background(), dir, 10*time.Second)
+	if err != nil {
+		t.Fatalf("the lock was released, the waiter must get it: %v", err)
+	}
+	u2()
+	if d := time.Since(start); d < 600*time.Millisecond || d > 5*time.Second {
+		t.Errorf("waited %v, expected about 0.7 s", d)
+	}
+}
+
+func TestLockWaitGivesUpAfterTheLimit(t *testing.T) {
+	dir := t.TempDir()
+	unlock, err := Lock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+
+	// no waiting: refused at once, as before
+	start := time.Now()
+	if _, err := LockWait(context.Background(), dir, 0); !errors.Is(err, ErrLocked) || time.Since(start) > 300*time.Millisecond {
+		t.Fatalf("wait=0: %v after %v", err, time.Since(start))
+	}
+	// a short wait: refused, but not before the wait is over
+	start = time.Now()
+	if _, err := LockWait(context.Background(), dir, 900*time.Millisecond); !errors.Is(err, ErrLocked) || time.Since(start) < 800*time.Millisecond {
+		t.Fatalf("short wait: %v after %v", err, time.Since(start))
+	}
+	// the context ends the wait early
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start = time.Now()
+	if _, err := LockWait(ctx, dir, time.Hour); !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 3*time.Second {
+		t.Fatalf("cancelled wait: %v after %v", err, time.Since(start))
+	}
+}
+
+// Two timers that fire together must run one after the other: the second job waits for the first
+// instead of failing, and both publish.
+func TestSecondIngestWaitsInsteadOfFailing(t *testing.T) {
+	dir := t.TempDir()
+	started, release := make(chan struct{}), make(chan struct{})
+	var wg sync.WaitGroup
+	var firstErr error
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, firstErr = (&Publisher{Dir: dir}).Run(context.Background(), func(ctx context.Context, w *Writer) error {
+			close(started)
+			<-release
+			_, err := w.InsertPrograms(ctx, []model.Program{prog("M3-AAA1", "Első")})
+			return err
+		})
+	}()
+	<-started
+	time.AfterFunc(600*time.Millisecond, func() { close(release) })
+	sum, err := (&Publisher{Dir: dir, LockWait: 15 * time.Second}).Run(context.Background(), func(ctx context.Context, w *Writer) error {
+		_, err := w.InsertPrograms(ctx, []model.Program{prog("M3-AAA2", "Második")})
+		return err
+	})
+	wg.Wait()
+	if firstErr != nil || err != nil {
+		t.Fatalf("both runs must succeed: first %v, second %v", firstErr, err)
+	}
+	if sum.Before != 1 || sum.After != 2 {
+		t.Errorf("the second run must have started from the first one's result: %+v", sum)
+	}
+}
+
 func TestBackupsAreRotated(t *testing.T) {
 	dir := t.TempDir()
 	clock := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)

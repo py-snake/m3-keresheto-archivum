@@ -1,0 +1,38 @@
+[Unit]
+Description=m3 ingest (re-query the availability of the stalest programs)
+
+[Container]
+ContainerName=m3-ingest-recheck
+Image=localhost/m3:latest
+Exec=ingest recheck
+# outbound access, but no connection to the web role's network
+Network=m3-egress.network
+ReadOnly=true
+DropCapability=ALL
+NoNewPrivileges=true
+UserNS=keep-id
+User=%U
+Group=%G
+PodmanArgs=--memory=512m
+# the ingest is the only role that may write the data directory
+Volume=%h/m3/data:/data:z
+
+# A short run every half hour: 30 programs, 3 s apart (about two minutes), oldest check first. That
+# is up to 1440 requests a day, enough to re-check all programs about once a day. Lower the number or
+# make the timer less frequent (m3-ingest-recheck.timer) to be gentler on the upstream.
+Environment=M3_RECHECK_PER_RUN=30
+Environment=M3_RECHECK_DELAY_MS=3000
+# No backup copy of the database per run: backups are rotated by count, so 48 runs a day would push the
+# daily and weekly backups out within hours. The recheck only refreshes availability flags.
+Environment=M3_BACKUPS_KEPT=0
+# Wait for a running daily/weekly ingest or export (up to 10 minutes) instead of failing.
+Environment=M3_LOCK_WAIT_SECONDS=600
+
+# optional: send every outbound request through a proxy instead of this machine's own address.
+#   printf '%s' 'https://user:password@proxy.example:8443' | podman secret create m3-upstream-proxy -
+# Secret=m3-upstream-proxy,type=env,target=UPSTREAM_PROXY
+# Environment=UPSTREAM_PROXY_INSECURE=1   # only for a proxy with a self-signed certificate
+
+[Service]
+Type=oneshot
+TimeoutStartSec=30min
