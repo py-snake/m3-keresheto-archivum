@@ -1,4 +1,54 @@
+{{define "head"}}<script src="/static/search.js" defer></script>{{end}}
+
 {{define "content"}}
+{{template "form" .}}
+<div id="results" aria-live="polite">{{template "results" .}}</div>
+{{end}}
+
+{{define "form"}}
+<form id="search-form" method="get" action="/">
+	<div class="mdc-text-field mdc-text-field--outlined mdc-text-field--with-leading-icon">
+		<svg class="mdc-text-field__icon search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><line x1="15" y1="15" x2="21" y2="21" stroke="currentColor" stroke-width="2"/></svg>
+		<input id="search-field" class="mdc-text-field__input" type="search" name="kereses" value="{{.F.Term}}" maxlength="100" autofocus aria-label="Keresés" tabindex="0" autocomplete="off">
+		<div class="mdc-notched-outline mdc-notched-outline--upgraded">
+			<div class="mdc-notched-outline__leading"></div>
+			<div class="mdc-notched-outline__notch"></div>
+			<div class="mdc-notched-outline__trailing"></div>
+		</div>
+	</div>
+	<button id="search-button" type="submit" class="mdc-button mdc-button--raised"><span class="mdc-button__ripple"></span>Keresés</button>
+	<label class="only-playable mdc-typography--caption"><input type="checkbox" name="elerheto" value="1"{{if .F.OnlyPlayable}} checked{{end}}> Csak a most elérhetők</label>
+	<span id="search-status" class="mdc-typography--caption" role="status"></span>
+
+	<details class="advanced"{{if .AdvancedOpen}} open{{end}}>
+		<summary class="mdc-typography--caption">Részletes keresés és rendezés</summary>
+		<div class="advanced__grid mdc-typography--caption">
+			<label>Cím <input type="search" name="cim" value="{{.F.Title}}" maxlength="100"></label>
+			<label>Alcím <input type="search" name="alcim" value="{{.F.Subtitle}}" maxlength="100"></label>
+			<label>Leírás <input type="search" name="leiras" value="{{.F.Description}}" maxlength="100"></label>
+			<label>Készítők <input type="search" name="keszitok" value="{{.F.Creators}}" maxlength="100"></label>
+			<label>Közreműködők <input type="search" name="kozremukodok" value="{{.F.Contributors}}" maxlength="100"></label>
+			<label>Műfaj
+				<select name="mufaj">
+					<option value="">(bármelyik)</option>
+					{{range .Genres}}<option value="{{.Name}}"{{if eq .Name $.F.Genre}} selected{{end}}>{{.Name}} ({{.Count}})</option>{{end}}
+				</select>
+			</label>
+			<label>Év-tól <input type="number" name="ev_tol" {{if .YearMin}}min="{{.YearMin}}" max="{{.YearMax}}" {{end}}value="{{if .F.YearFrom}}{{.F.YearFrom}}{{end}}"></label>
+			<label>Év-ig <input type="number" name="ev_ig" {{if .YearMin}}min="{{.YearMin}}" max="{{.YearMax}}" {{end}}value="{{if .F.YearTo}}{{.F.YearTo}}{{end}}"></label>
+			<label>Rendezés
+				<select name="rendezes">
+					{{range .SortOptions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+				</select>
+			</label>
+			<label class="check"><input type="checkbox" name="kiemelt" value="1"{{if .F.OnlyHighlighted}} checked{{end}}> Csak a kiemeltek</label>
+		</div>
+		<p class="advanced__hint mdc-typography--caption">A szöveges mezőkben legalább 3 karakter kell, az egyszerű keresőmezőben 1–2 karakter csak a címben keres. A mezők együtt szűrnek (ÉS).</p>
+	</details>
+</form>
+{{end}}
+
+{{define "results"}}
 {{if .Notice}}
 <div class="mdc-typography--body1 list__no_items">{{.Notice}}</div>
 {{else if not .Items}}
@@ -30,6 +80,7 @@
 		</thead>
 		<tbody class="mdc-data-table__content">
 			{{range .Items}}
+			{{$hist := index $.History .ProgramID}}
 			<tr class="mdc-data-table__row">
 				<td class="mdc-data-table__cell mdc-data-table__cell--numeric">
 					<div class="m3id">{{.ProgramID}}</div>
@@ -38,12 +89,14 @@
 						{{with $d := futureDate . $.Today}}<div class="m3player-overlay" title="Közzététel dátuma">📅 {{$d}}</div>{{end}}
 					</div>
 					<div class="avail-row">
-						{{if .GoneAt}}<span class="avail avail--gone" title="{{checked .}}">Eltűnt az M3-ról</span>{{else if .PlayableKnown}}{{if .Playable}}<span class="avail avail--yes" title="{{checked .}}">Elérhető</span>{{else}}<span class="avail avail--no" title="{{checked .}}">Nem elérhető</span>{{end}}{{else}}<span class="avail avail--unknown" title="Az elérhetőséget még nem ellenőriztük.">Ismeretlen</span>{{end}}
+						{{if .GoneAt}}<span class="avail avail--gone" title="{{checked . $hist}}">Eltűnt az M3-ról</span>{{else if .PlayableKnown}}{{if .Playable}}<span class="avail avail--yes" title="{{checked . $hist}}">Elérhető</span>{{else}}<span class="avail avail--no" title="{{checked . $hist}}">Nem elérhető</span>{{end}}{{else}}<span class="avail avail--unknown" title="Az elérhetőséget még nem ellenőriztük.">Ismeretlen</span>{{end}}
 						<a class="m3link" href="https://nemzetiarchivum.hu/m3/{{.ProgramID}}" target="_blank" rel="noopener noreferrer">M3 oldal ↗</a>
 					</div>
 				</td>
 				<td class="mdc-data-table__cell cell__title">
 					<span class="mdc-typography--headline6 cell__title--title">{{.Title}}</span>
+					{{if .IsHighlighted}}<span class="badge badge--highlight" title="Az M3 kiemelt műsora">Kiemelt</span>{{end}}
+					{{if .IsLive}}<span class="badge badge--live">Élő</span>{{end}}
 					{{if .Subtitle}}&#8212; <span class="mdc-typography--subtitle1 cell__title--subtitle">{{.Subtitle}}</span>{{end}}
 					{{if .IsSeries}}<span class="mdc-typography--subtitle2 cell__title--ep">({{.Episode}}. / {{.Episodes}})</span>{{end}}
 					<details>
@@ -51,7 +104,7 @@
 						<div class="mdc-data-table mdc-elevation--z4 details__table">
 							<table class="mdc-data-table__table">
 								<tbody class="mdc-data-table__content">
-									{{range details .}}
+									{{range details . $hist}}
 									<tr class="mdc-data-table__row">
 										<td class="mdc-data-table__cell mdc-data-table__cell--numeric mdc-typography--caption">{{.Key}}</td>
 										<td class="mdc-data-table__cell mdc-typography--caption">{{range $i, $l := lines .Value}}{{if $i}}<br>{{end}}{{$l}}{{end}}</td>

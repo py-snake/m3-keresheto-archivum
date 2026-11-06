@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,8 +149,9 @@ func assertSecure(t *testing.T, what string, resp *http.Response) {
 		t.Errorf("%s: sets a cookie: %s", what, v)
 	}
 	csp := resp.Header.Get("Content-Security-Policy")
-	if strings.Contains(csp, "script-src") || strings.Contains(csp, "unsafe") || !strings.Contains(csp, "default-src 'none'") {
-		t.Errorf("%s: CSP must forbid scripts: %s", what, csp)
+	if strings.Contains(csp, "unsafe") || !strings.Contains(csp, "default-src 'none'") || !strings.Contains(csp, "script-src 'self';") ||
+		!strings.Contains(csp, "connect-src 'self';") || strings.Contains(csp, "http") || strings.Contains(csp, "*") {
+		t.Errorf("%s: the CSP must allow only same-origin scripts and fetches: %s", what, csp)
 	}
 }
 
@@ -174,10 +176,14 @@ func TestIndexRendersTheArchive(t *testing.T) {
 		}
 	}
 	// no JavaScript and no third-party resources at all
-	for _, bad := range []string{"<script", "googleapis", "unpkg"} {
+	for _, bad := range []string{"googleapis", "unpkg", "onclick", "onload", "javascript:"} {
 		if strings.Contains(body, bad) {
 			t.Errorf("page contains %q", bad)
 		}
+	}
+	// exactly one script, an external file of this site: no inline script anywhere
+	if n := strings.Count(body, "<script"); n != 1 || !strings.Contains(body, `<script src="/static/search.js" defer></script>`) {
+		t.Errorf("expected only the instant search script, found %d script tags", n)
 	}
 	// nothing is loaded from another host: only plain links lead there (the M3 page of a program)
 	for _, bad := range []string{`src="http`, `src='http`, `<link rel="stylesheet" href="http`, `url(http`} {
@@ -201,9 +207,13 @@ func TestSearchAndNotices(t *testing.T) {
 	if !strings.Contains(body, `value="BEKE"`) || !strings.Contains(body, "<title>BEKE - m3 kereshető archívum</title>") {
 		t.Error("search term not echoed")
 	}
-	_, body = e.get(t, "/?kereses=ab")
-	if !strings.Contains(body, "Legalább 3 karakter") {
-		t.Error("short term notice missing")
+	_, body = e.get(t, "/?kereses=ke")
+	if strings.Contains(body, "Legalább 3 karakter") || !strings.Contains(body, "A béke szigete") || strings.Contains(body, "Vadászkutyák") {
+		t.Error("a 1-2 character term must search the titles, not be refused")
+	}
+	_, body = e.get(t, "/?cim=ab")
+	if !strings.Contains(body, "legalább 3 karakter") {
+		t.Error("a field filter under 3 characters needs a notice")
 	}
 	_, body = e.get(t, "/?kereses=nincsilyen")
 	if !strings.Contains(body, "Nincs találat") {
@@ -214,11 +224,11 @@ func TestSearchAndNotices(t *testing.T) {
 		t.Error("id lookup failed")
 	}
 	_, body = e.get(t, "/?kereses=a%00b")
-	if !strings.Contains(body, "Érvénytelen keresőszó") {
+	if !strings.Contains(body, "Érvénytelen karakter a keresőszövegben") {
 		t.Error("NUL in the term not rejected")
 	}
 	_, body = e.get(t, "/?kereses=%ff%fe")
-	if !strings.Contains(body, "Érvénytelen keresőszó") {
+	if !strings.Contains(body, "Érvénytelen karakter a keresőszövegben") {
 		t.Error("invalid UTF-8 not rejected")
 	}
 }
@@ -562,7 +572,7 @@ func TestLogsHoldNeitherSearchTermsNorRawAddresses(t *testing.T) {
 }
 
 func TestPagerWindow(t *testing.T) {
-	items := buildPager(10, 1000, `a b&c`, true, false)
+	items := buildPager(10, 1000, url.Values{"kereses": {`a b&c`}}, true)
 	var labels []string
 	for _, it := range items {
 		labels = append(labels, it.Label)
@@ -574,10 +584,10 @@ func TestPagerWindow(t *testing.T) {
 	if items[1].Href != "/9?kereses=a+b%26c&nyers" {
 		t.Fatalf("href: %s", items[1].Href)
 	}
-	if buildPager(1, 5, "", false, false) != nil {
+	if buildPager(1, 5, nil, false) != nil {
 		t.Fatal("a single page needs no pager")
 	}
-	if p := buildPager(1, 50*1000, "", false, false); len(p) == 0 || p[len(p)-1].Href != "/1000" {
+	if p := buildPager(1, 50*1000, nil, false); len(p) == 0 || p[len(p)-1].Href != "/1000" {
 		t.Fatalf("pager must stop at MaxPage: %+v", p[len(p)-1])
 	}
 }
@@ -757,7 +767,7 @@ func TestPagerKeepsTheAvailabilityFilter(t *testing.T) {
 	if !strings.Contains(body, `href="/2?elerheto=1&amp;kereses=Film"`) && !strings.Contains(body, `href="/2?kereses=Film&amp;elerheto=1"`) {
 		t.Errorf("pager links drop the filter")
 	}
-	if items := buildPager(1, 30, "x", false, true); !strings.Contains(items[1].Href, "elerheto=1") {
+	if items := buildPager(1, 30, url.Values{"elerheto": {"1"}, "kereses": {"x"}}, false); !strings.Contains(items[1].Href, "elerheto=1") {
 		t.Errorf("%+v", items)
 	}
 }
@@ -773,4 +783,13 @@ func TestDetailsShowAvailability(t *testing.T) {
 			t.Errorf("details lack %s", key)
 		}
 	}
+}
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+func newTestServer(t *testing.T, s *Server) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	return srv
 }
