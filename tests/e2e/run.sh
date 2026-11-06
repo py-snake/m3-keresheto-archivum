@@ -113,6 +113,11 @@ check $? "direct ingest works where a route exists"
 
 echo "== 7. the web role: read-only root fs, read-only data, no capabilities, no outbound network"
 DATA="$WORK/tls-insecure"
+
+echo "-- downloads: m3 export in a hardened container WITHOUT any network"
+podman run --rm "${HARD[@]}" --network none -v "$DATA:/data:z" "$IMG" export >"$WORK/out.export" 2>&1
+check $? "m3 export needs no network and finishes"
+[ -s "$DATA/export/manifest.json" ]; check $? "the manifest was written (last)"
 # the checks below send ~30 requests from one client in a burst: raise the rate limit for them
 # (the limiter itself is covered by the unit tests)
 podman run -d --name m3web --network "$NET_INT" "${HARD[@]}" -e M3_RATE_LIMIT=100 -e M3_RATE_BURST=500 -v "$DATA:/data:ro,z" "$IMG" serve >/dev/null
@@ -134,7 +139,7 @@ def t(name, cond):
 s, h, b = req("GET", "/")
 t("GET / -> 200 html", s == 200 and h["content-type"].startswith("text/html"))
 t("the page lists programs", "találat" in b.decode())
-t("no script tag, no third party host", b"<script" not in b and b"googleapis" not in b and b"unpkg" not in b)
+t("only the one same-origin script, no third party host", b.count(b"<script") == 1 and b'<script src="/static/search.js" defer></script>' in b and b"googleapis" not in b and b"unpkg" not in b)
 t("every program links to its page on the M3 site", b"https://nemzetiarchivum.hu/m3/M3-" in b and b'rel="noopener noreferrer"' in b)
 t("an availability badge is shown (the daily run records the playable flag)", b"avail--" in b)
 sf, _, bf = req("GET", "/?elerheto=1"); t("the 'only available' filter answers", sf == 200 and b"avail--no" not in bf)
@@ -154,8 +159,50 @@ for meth in ["POST", "PUT", "DELETE", "PATCH"]:
     s, _, _ = req(meth, "/"); t("%s / -> 405" % meth, s == 405)
 s, _, b = req("GET", "/?kereses=%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E")
 t("a hostile search term is escaped", b"<script>alert" not in b)
-s, _, b = req("GET", "/?kereses=ab"); t("short term gets a notice", "Legalább 3" in b.decode())
+s, _, b = req("GET", "/?kereses=ab"); t("a 1-2 character term searches the titles", s == 200 and "Legalább 3" not in b.decode())
+s, _, b = req("GET", "/?cim=ab"); t("a field filter under 3 characters gets a notice", "legalább 3 karakter" in b.decode())
 s, _, _ = req("GET", "/static/app.css"); t("static css (status %d)" % s, s == 200)
+
+# ---- REST API and OpenAPI
+import json, gzip, hashlib, csv, io, sqlite3, os, tempfile
+s, h, b = req("GET", "/api/v1/programs?per_page=3&sort=title_asc")
+data = json.loads(b) if s == 200 else {}
+t("API list answers JSON", s == 200 and h["content-type"].startswith("application/json") and len(data.get("items", [])) == 3 and data.get("total", 0) > 3)
+t("API sends CORS and nosniff", h.get("access-control-allow-origin") == "*" and h.get("x-content-type-options") == "nosniff")
+first = (data.get("items") or [{}])[0].get("id", "")
+s, _, b = req("GET", "/api/v1/programs/" + first); t("API single program", s == 200 and json.loads(b).get("id") == first)
+s, _, b = req("GET", "/api/v1/programs?per_page=0"); t("API validates input (400, JSON error)", s == 400 and "error" in json.loads(b))
+s, _, _ = req("OPTIONS", "/api/v1/programs"); t("API answers the CORS preflight", s == 204)
+s, h, _ = req("POST", "/api/v1/programs"); t("API is read-only (405)", s == 405)
+s, _, b = req("GET", "/api/v1/openapi.json"); t("OpenAPI document", s == 200 and json.loads(b).get("openapi") == "3.1.0")
+s, _, b = req("GET", "/api/"); t("API documentation page", s == 200 and b"/api/v1/programs" in b)
+
+# ---- downloads, from the real container pipeline
+s, _, b = req("GET", "/export/manifest.json")
+manifest = json.loads(b) if s == 200 else {"files": [], "programs": -1}
+t("manifest is served", s == 200 and manifest["programs"] > 0 and len(manifest["files"]) == 4)
+bodies = {}
+for f in manifest["files"]:
+    s, hh, body = req("GET", "/export/" + f["name"])
+    bodies[f["name"]] = body
+    t("download %s matches its checksum" % f["name"], s == 200 and hashlib.sha256(body).hexdigest() == f["sha256"] and len(body) == f["bytes"])
+s, _, sums = req("GET", "/export/SHA256SUMS")
+t("SHA256SUMS lists every file", s == 200 and all((f["sha256"] + "  " + f["name"]).encode() in sums for f in manifest["files"]))
+dump = gzip.decompress(bodies.get("m3-archive.sqlite.gz", b""))
+path = os.path.join(tempfile.mkdtemp(), "m3.sqlite"); open(path, "wb").write(dump)
+db = sqlite3.connect("file:" + path + "?mode=ro", uri=True)
+t("the dump is a usable SQLite database with every program", db.execute("select count(*) from programs").fetchone()[0] == manifest["programs"])
+rows = list(csv.reader(io.StringIO(gzip.decompress(bodies["m3-programs.csv.gz"]).decode())))
+t("the CSV has a header and every program", len(rows) == manifest["programs"] + 1 and rows[0][0] == "id")
+t("no CSV cell starts with a formula character", not any(c and c[0] in "=+-@" + chr(9) + chr(13) for r in rows[1:] for c in r))
+lines = gzip.decompress(bodies["m3-programs.jsonl.gz"]).decode().splitlines()
+t("the JSONL has one valid object per program", len(lines) == manifest["programs"] and all(isinstance(json.loads(l), dict) for l in lines[:50]))
+try:
+    sqlite3.connect(":memory:").executescript(bodies["schema.sql"].decode()); schema_ok = True
+except sqlite3.OperationalError as e:
+    schema_ok = "fts5" in str(e)  # a Python without FTS5 cannot run the full text part: that is not a defect of the file
+t("schema.sql creates the tables", schema_ok)
+s, _, b = req("GET", "/export/"); t("download page", s == 200 and b"sha256sum -c" in b)
 sys.exit(1 if fails else 0)
 PY
 podman run --rm --network "$NET_INT" -v "$WORK/check.py:/check.py:ro,z" "$CLIENT_IMG" python3 /check.py | tee "$WORK/web.out"

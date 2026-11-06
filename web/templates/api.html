@@ -1,0 +1,45 @@
+{{define "content"}}
+<section class="doc mdc-typography--body2">
+	<h2 class="mdc-typography--headline6">API</h2>
+	<p>Csak olvasható REST API (JSON), hogy más programok is használhassák az adatokat. Szabványos <a href="/api/v1/openapi.json">OpenAPI 3.1</a> leírása van, amelyből kliens is generálható. Hitelesítés nincs, bármely weboldal olvashatja (CORS).</p>
+
+	<h3 class="mdc-typography--subtitle1">Végpontok</h3>
+	<div class="mdc-data-table mdc-elevation--z2 list__table">
+		<table class="mdc-data-table__table">
+			<tbody class="mdc-data-table__content">
+				<tr class="mdc-data-table__row"><td class="mdc-data-table__cell"><code>GET /api/v1/</code></td><td class="mdc-data-table__cell doc__wrap">összegzés: a műsorok száma, az adatbázis frissességének ideje, korlátok</td></tr>
+				<tr class="mdc-data-table__row"><td class="mdc-data-table__cell"><code>GET /api/v1/programs</code></td><td class="mdc-data-table__cell doc__wrap">keresés és lista, lapozva</td></tr>
+				<tr class="mdc-data-table__row"><td class="mdc-data-table__cell"><code>GET /api/v1/programs/{id}</code></td><td class="mdc-data-table__cell doc__wrap">egy műsor az elérhetőségi előzménnyel</td></tr>
+				<tr class="mdc-data-table__row"><td class="mdc-data-table__cell"><code>GET /api/v1/openapi.json</code></td><td class="mdc-data-table__cell doc__wrap">az OpenAPI leírás</td></tr>
+				<tr class="mdc-data-table__row"><td class="mdc-data-table__cell"><code>GET /img/{id}.jpg</code></td><td class="mdc-data-table__cell doc__wrap">a műsor borítóképe (ha az <code>image_url</code> meg van adva)</td></tr>
+			</tbody>
+		</table>
+	</div>
+
+	<h3 class="mdc-typography--subtitle1">A lista paraméterei</h3>
+	<ul>
+		<li><code>q</code>: szöveges keresés (ékezet- és kis-nagybetűfüggetlen részszó). Legalább 3 karakter minden mezőben; 1–2 karakter csak a címben keres. Az <code>M3-…</code> azonosítók (vesszővel elválasztva) azonosító szerint keresnek.</li>
+		<li><code>title</code>, <code>subtitle</code>, <code>description</code>, <code>creators</code>, <code>contributors</code>, <code>genre</code>, <code>info</code>: keresés egy adott mezőben (legalább 3 karakter). Együtt ÉS kapcsolatban szűrnek.</li>
+		<li><code>year_from</code>, <code>year_to</code>: a gyártás éve.</li>
+		<li><code>playable=true</code>: csak a legutóbb elérhetőnek látott műsorok. <code>highlighted=true</code>: csak a kiemeltek.</li>
+		<li><code>sort</code>: <code>newest</code> (alapérték), <code>oldest</code>, <code>year_desc</code>, <code>year_asc</code>, <code>title_asc</code>, <code>title_desc</code>, <code>released_desc</code>.</li>
+		<li><code>page</code> (1–1000), <code>per_page</code> (1–100, alapérték 20).</li>
+	</ul>
+
+	<h3 class="mdc-typography--subtitle1">Példák</h3>
+<pre class="doc__code">curl '/api/v1/programs?q=béke&amp;playable=true&amp;per_page=5'
+curl '/api/v1/programs?creators=Nagy+István&amp;year_from=1980&amp;sort=title_asc'
+curl '/api/v1/programs/M3-59945851A60999998'</pre>
+	<p>(Add meg elé az oldal címét.)</p>
+
+	<h3 class="mdc-typography--subtitle1">Válasz</h3>
+	<p>A lista <code>{"total", "capped", "page", "per_page", "pages", "items": [...]}</code> alakú. A <code>capped</code> igaz, ha a keresésnek legalább 10 000 találata van (a <code>total</code> ekkor 10 000). Egy műsor mezői: <code>id</code>, <code>title</code>, <code>subtitle</code>, <code>description</code>, <code>short_description</code>, <code>info</code>, <code>extended_info</code>, <code>company</code>, <code>year</code>, <code>country</code>, <code>creators</code>, <code>contributors</code>, <code>genre</code>, <code>quality</code>, <code>pg</code>, <code>ratio</code>, <code>duration</code> (ÓÓ:PP:MM:KK, az utolsó a képkocka), <code>has_subtitle</code>, <code>is_series</code>, <code>series</code>, <code>episode</code>, <code>episodes</code>, <code>added_at</code>, <code>released_at</code>, <code>highlighted</code>, <code>live</code>, <code>aired_first</code>, <code>aired_last</code>, <code>has_image</code>, <code>image_url</code>, <code>m3_url</code> és az <code>availability</code> objektum. A listamezők tömbök, az időpontok UTC, ISO 8601.</p>
+	<p>Az <strong><code>availability</code></strong> az <em>utolsó megfigyelt</em> állapot: a <code>playable</code> értéke <code>null</code>, amíg nem ellenőriztük, a <code>checked_at</code> pedig megmondja, mikor. A műsorok lejátszhatósága időablakos és változik, ezért az érték azóta is megváltozhatott. A műsor lejátszása az M3 oldalán történik (<code>m3_url</code>).</p>
+
+	<h3 class="mdc-typography--subtitle1">Hibák és korlátok</h3>
+	<p>A hibák JSON-ban érkeznek: <code>{"error": {"code": "...", "message": "..."}}</code> (400 hibás paraméter, 404 nincs ilyen műsor, 405 nem GET, 429 túl sok kérés, 503 az adatbázis nem áll készen vagy a keresés túl sokáig tartott). A kérések száma látogatónként korlátozott (a <code>Retry-After</code> fejléc mondja meg, mikor próbálkozhatsz újra). <strong>Sok adatra ne az API-t olvasd végig: töltsd le a <a href="/export/">teljes adatot</a></strong>.</p>
+
+	<h3 class="mdc-typography--subtitle1">Az adatok eredete</h3>
+	<p>Az adatok az <a href="https://nemzetiarchivum.hu/m3" rel="noopener noreferrer">M3 (Nemzeti Archívum)</a> nyilvános felületéről származnak; az újrafelhasználás feltételeit ők határozzák meg.</p>
+</section>
+{{end}}

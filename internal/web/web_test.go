@@ -33,7 +33,7 @@ type env struct {
 	logs *bytes.Buffer
 }
 
-func newEnv(t *testing.T, tune func(*Options), ps ...model.Program) *env {
+func newEnv(t testing.TB, tune func(*Options), ps ...model.Program) *env {
 	t.Helper()
 	dir := t.TempDir()
 	logs := &bytes.Buffer{}
@@ -73,7 +73,7 @@ func newEnv(t *testing.T, tune func(*Options), ps ...model.Program) *env {
 	}
 	t.Cleanup(src.Close)
 
-	o := Options{DataDir: dir, Source: src, Log: log, RateLimit: 1000, RateBurst: 1000, MaxInFlight: 64}
+	o := Options{DataDir: dir, Source: src, Log: log, RateLimit: 1000, RateBurst: 1000, MaxInFlight: 64, PublicAPI: true, PublicExport: true}
 	if tune != nil {
 		tune(&o)
 	}
@@ -829,4 +829,22 @@ func TestOnePageViewIsNeverThrottled(t *testing.T) {
 	if !limited {
 		t.Fatal("searches must still be rate limited")
 	}
+}
+
+func httptestRequest(rawQuery string) *http.Request {
+	if len(rawQuery) > 2000 || strings.ContainsAny(rawQuery, " \r\n\x00#") {
+		return nil
+	}
+	req, err := http.NewRequest("GET", "/api/v1/programs?"+rawQuery, nil)
+	if err != nil {
+		return nil
+	}
+	req.RemoteAddr = "192.0.2.1:1234"
+	return req
+}
+
+func serve(s *Server, req *http.Request) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	return rec
 }

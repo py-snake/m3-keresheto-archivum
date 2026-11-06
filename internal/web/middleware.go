@@ -60,6 +60,12 @@ func (s *Server) secure(next http.Handler) http.Handler {
 		h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		h.Set("X-Frame-Options", "DENY")
 
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			// the API is public read-only data: any website may read it (this also covers 404/429 answers)
+			h.Set("Access-Control-Allow-Origin", "*")
+			h.Set("Cross-Origin-Resource-Policy", "cross-origin")
+		}
+
 		if len(r.RequestURI) > maxURLLength {
 			http.Error(w, "A kérés címe túl hosszú.", http.StatusRequestURITooLong)
 			return

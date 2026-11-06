@@ -207,3 +207,13 @@ a.home { color: inherit; text-decoration: none; }
 .footer-links a { color: inherit; margin: 0 8px; }
 #search-status { margin-left: 10px; color: #ef9a9a; }
 #search-form.searching ~ #results { opacity: 0.55; transition: opacity 0.15s; }
+
+/* documentation pages (downloads, API) */
+.doc { max-width: 1000px; margin: 0 auto; color: var(--mdc-theme-text-primary-on-dark); line-height: 1.5; }
+.doc h2, .doc h3 { margin: 18px 0 8px 0; }
+.doc a { color: #9ecbff; }
+.doc__meta { color: var(--mdc-theme-text-hint-on-dark); }
+.doc__wrap { white-space: normal; word-wrap: break-word; }
+.doc__hash { font-size: 0.68rem; word-break: break-all; }
+.doc__code { background: #1e1e1e; border: 1px solid #333; border-radius: 4px; padding: 10px 12px; overflow-x: auto; font-size: 0.8rem; }
+.doc code { background: #1e1e1e; padding: 0 4px; border-radius: 3px; }

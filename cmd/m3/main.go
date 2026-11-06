@@ -8,6 +8,7 @@
 //	m3 ingest recheck             re-query the availability of the stalest programs (off unless M3_RECHECK_PER_RUN is set)
 //	m3 ingest refresh             re-fetch the descriptive data of the stalest programs (off unless M3_REFRESH_PER_RUN is set)
 //	m3 ingest migrate             upgrade the database schema (no upstream requests)
+//	m3 export                     write the downloadable copies (SQLite dump, CSV, JSONL, schema) to <data>/export
 //	m3 healthcheck [url]          exit 0 when the server answers (for container health checks)
 //	m3 version
 //
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	"github.com/py-snake/m3-keresheto-archivum/internal/config"
+	"github.com/py-snake/m3-keresheto-archivum/internal/export"
 	"github.com/py-snake/m3-keresheto-archivum/internal/ingest"
 	"github.com/py-snake/m3-keresheto-archivum/internal/upstream"
 	"github.com/py-snake/m3-keresheto-archivum/internal/web"
@@ -69,6 +71,20 @@ func run(args []string) int {
 
 	case "ingest":
 		return runIngest(ctx, log, args[1:])
+
+	case "export":
+		cfg, err := config.FromEnv(os.Getenv)
+		if err != nil {
+			log.Error("configuration error", "err", err)
+			return 2
+		}
+		m, err := export.Run(ctx, cfg.DataDir, time.Now())
+		if err != nil {
+			log.Error("export failed", "err", err)
+			return 1
+		}
+		log.Info("export finished", "programs", m.Programs, "files", len(m.Files), "dir", cfg.DataDir+"/export")
+		return 0
 	}
 
 	usage()
@@ -207,6 +223,7 @@ func usage() {
   m3 serve
   m3 ingest daily|weekly|images|recheck|refresh|migrate
   m3 ingest item M3-... [M3-...]
+  m3 export
   m3 healthcheck [url]
   m3 version
 `)

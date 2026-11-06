@@ -76,6 +76,10 @@ type Server struct {
 
 	imgMu   sync.Mutex
 	imgRoot *os.Root
+
+	expMu     sync.Mutex
+	expRoot   *os.Root
+	downloads chan struct{}
 }
 
 // New builds the server.
@@ -101,14 +105,15 @@ func New(o Options) (*Server, error) {
 		return nil, err
 	}
 	return &Server{
-		o:        o,
-		pages:    pages,
-		static:   http.StripPrefix("/static/", http.FileServerFS(noDirs{sub})),
-		limiter:  newLimiter(o.RateLimit, o.RateBurst, maxTracked, o.Now),
-		assets:   newLimiter(assetRate, assetBurst, maxTracked, o.Now),
-		anon:     &anonymizer{now: o.Now},
-		inflight: make(chan struct{}, o.MaxInFlight),
-		now:      o.Now,
+		o:         o,
+		pages:     pages,
+		static:    http.StripPrefix("/static/", http.FileServerFS(noDirs{sub})),
+		limiter:   newLimiter(o.RateLimit, o.RateBurst, maxTracked, o.Now),
+		assets:    newLimiter(assetRate, assetBurst, maxTracked, o.Now),
+		anon:      &anonymizer{now: o.Now},
+		inflight:  make(chan struct{}, o.MaxInFlight),
+		downloads: make(chan struct{}, maxDownloads),
+		now:       o.Now,
 	}, nil
 }
 
@@ -119,6 +124,12 @@ func (s *Server) Close() {
 	if s.imgRoot != nil {
 		_ = s.imgRoot.Close()
 		s.imgRoot = nil
+	}
+	s.expMu.Lock()
+	defer s.expMu.Unlock()
+	if s.expRoot != nil {
+		_ = s.expRoot.Close()
+		s.expRoot = nil
 	}
 }
 
@@ -131,6 +142,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /static/", s.staticFile)
 	mux.HandleFunc("GET /robots.txt", s.robots)
 	mux.HandleFunc("GET /healthz", s.health)
+	if s.o.PublicExport {
+		mux.HandleFunc("GET /export/{$}", s.exportIndex)
+		mux.HandleFunc("GET /export/{file}", s.exportFile)
+	}
+	if s.o.PublicAPI {
+		mux.HandleFunc("GET /api/{$}", s.apiDoc)
+		mux.HandleFunc("GET /api/v1/{$}", s.apiRoot)
+		mux.HandleFunc("GET /api/v1/programs", s.apiPrograms)
+		mux.HandleFunc("GET /api/v1/programs/{id}", s.apiProgram)
+		mux.HandleFunc("GET /api/v1/openapi.json", s.apiOpenAPI)
+		mux.HandleFunc("/api/", s.apiFallback)
+	}
 
 	// access sits outside guard so that rejected requests (429/503) are logged too
 	return s.recoverer(s.secure(s.access(s.guard(mux))))
@@ -405,5 +428,7 @@ func OptionsFrom(cfg *config.Config, src *store.Source, log *slog.Logger) Option
 		RateLimit:      cfg.RateLimit,
 		RateBurst:      cfg.RateBurst,
 		MaxInFlight:    cfg.MaxInFlight,
+		PublicAPI:      cfg.PublicAPI,
+		PublicExport:   cfg.PublicExport,
 	}
 }

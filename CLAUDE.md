@@ -4,7 +4,7 @@
 > Minden session: (1) elolvassa, (2) munka közben frissen tartja, (3) a végén a [Változásnaplóba](#10-változásnapló) ír egy sort.
 
 - **Branch:** `go`. A `master` a lezárt PHP-verzió (referencia, **nem érdekes**: a felhasználó szerint „a php nem érdekel"). Ezen az ágon a PHP kód már nincs; tanulságai: [docs/PHP-HISTORY.md](docs/PHP-HISTORY.md).
-- **Állapot (2026-11-06):** a Go program **kész és tesztelt**, a séma **2-es verziójú** (elérhetőség, lásd 3. fejezet): `go vet`, `go test -race ./...`, `govulncheck` tiszta, `tests/e2e/run.sh` **51/51**, valós M3 adaton futtatva. Nem commitolt/pusholt kód nincs a munkában, kivéve ahol a naplóban jelezve.
+- **Állapot (2026-11-06):** a Go program **kész és tesztelt**, a séma **3-as verziójú** (részletes keresés, refresh, több megfigyelt mező). Van REST API (`/api/v1/`, OpenAPI), letölthető dump és CSV/JSONL export (`m3 export`), gépelés közbeni keresés (egyetlen saját `search.js`, CSP `script-src 'self'`). Ellenőrzés: `scripts/ci.sh [--full] [--fuzz]` (gofmt, vet, `go test -race`, govulncheck, Go-patchszint; `--full`: podman build, trivy, e2e). Go **1.26.10**. `tests/e2e/run.sh` **74/74**, `tests/e2e/browser.py` **17/17**, trivy 0, govulncheck 0, ZAP baseline + aktív: 0 FAIL ([docs/SECURITY-ASSESSMENT.md](docs/SECURITY-ASSESSMENT.md)). Valós M3 adaton futtatva.
 - **Tervdokumentum:** [docs/GO-DESIGN.md](docs/GO-DESIGN.md). **Felhasználói leírás (magyar):** [README.md](README.md).
 - **Utolsó mérés a valós rendszeren:** 2026-11-05.
 
@@ -79,6 +79,7 @@ docs/                     GO-DESIGN.md, PHP-HISTORY.md, spikes/
 ## 5. Ellenőrző receptek
 
 ```bash
+scripts/ci.sh            # gyors: gofmt, vet, go test -race, govulncheck, Go-patchszint (--full: + image, trivy, e2e; --fuzz: + fuzzerek)
 gofmt -l . ; go vet ./... && go test -race -count=1 ./...        # kimenetet NE pipe-old a kilépési kód miatt
 $(go env GOPATH)/bin/govulncheck ./...                            # go install golang.org/x/vuln/cmd/govulncheck@latest
 go test -run '^$' -fuzz='^FuzzParseProgram$' -fuzztime=30s ./internal/upstream   # fuzzerek: FuzzParseProgram, FuzzSanitize (images), FuzzSearchTerm (store)
@@ -112,9 +113,9 @@ M3_DATA_DIR=$S/real M3_IMAGES_PER_RUN=20 go run ./cmd/m3 ingest weekly
 | S12 összeomlás-teszt | ✅ | `TestCrashAtAnyPoint`: valódi folyamat 6 ponton megölve |
 | S13 megszakító | ✅ | `TestCircuitBreakerOnBrokenUpstreamData`, `…AllInvalid…` |
 | S14 CSP valódi böngészőben | ✅ | headless Chromium 155 a **valós** adaton (`/`, `/?kereses=`, `/?nyers`): **0 CSP-sértés**; pozitív kontroll (szándékosan sértő oldal) 3 sértést jelzett, tehát a módszer észleli; a képernyőkép szerint a felület helyesen renderel, a képek helyi fájlból |
-| S15 image-vizsgálat (trivy/grype) | ❌ nincs megcsinálva | scratch: nincs OS-csomag |
+| S15 image-vizsgálat (trivy) | ✅ | trivy 0.76 az image-en: 0 találat a Go 1.26.10-zel (előtte 1 HIGH, `CVE-2026-111943` stdlib `crypto/x509`, javítva); grype nincs |
 | S16 paritás a PHP-val | ➖ elvetve | a PHP nem érdekes |
-| S17 ZAP baseline | ❌ nincs megcsinálva | |
+| S17 ZAP | ✅ | baseline + aktív teljes vizsgálat a helyi szerveren: 0 FAIL; a 2 „magas” riasztás kézzel ellenőrizve téves (statikus CSS `?v=`, műsorazonosító számsora) |
 | S18 kép-fixture-ök | ✅ | `internal/images` tesztek, `TestHostileImagesAreNotStored` |
 | S19 `/img/` bejárás a saját szerveren | ✅ | `TestImagesAreServedFromTheDataDirectoryOnly` (18 minta, symlinkek) |
 | S20 web: nulla kimenő kérés | ✅ | e2e: `--network none` és `--internal` |
@@ -123,7 +124,7 @@ M3_DATA_DIR=$S/real M3_IMAGES_PER_RUN=20 go run ./cmd/m3 ingest weekly
 
 0. [x] ~~Elérhetőség tárolása és frissítése~~ **kész** (2026-11-06). Nyitva: a `recheck` élesben nincs kipróbálva a valós M3-mal (szándékosan, a kérések kímélése miatt); a következő lejátszható ablak nincs külön kezelve; az `availability_log` a felületen nem látszik.
 0. [ ] **Kereső UI**: részletes (mezőnkénti) szűrés és gépelés közbeni azonnali találatok: lásd a felhasználói kérdésekre adott válasz (2026-11-05); az azonnali keresés **JS-t** és `script-src 'self'` CSP-bővítést igényel, ezért a felhasználó dönt.
-1. [ ] **S15/S17**: image-szkennelés (trivy/grype), OWASP ZAP baseline a futó konténeren (nincs telepítve a gépen).
+1. [x] ~~S15/S17~~ **kész** (2026-11-06, lásd 6. fejezet). Nyitva: független ember általi áttekintés, `grype`, elosztott DoS-próba.
 3. [ ] **Quadlet élesben**: a generátor hibátlan, de az egységeket **nem indítottuk el** (cloudflared token kell). Digestre rögzíteni a cloudflared image-et.
 4. [ ] **CSV/gz export** (GO-DESIGN D4): nincs megvalósítva; ha kell, a CSV-injection escape kötelező.
 5. [ ] **`image_state = 2`** (az upstreamnek nincs képe) újrapróbálása (pl. 30 nap után): most végleges.
@@ -148,6 +149,7 @@ Minden környezeti változóból ([internal/config/config.go](internal/config/co
 
 | Dátum | Session | Mi történt |
 |---|---|---|
+| 2026-11-06 | #2 | **Séma v3, REST API + OpenAPI, dump/CSV/JSONL export, részletes és gépelés közbeni keresés, `refresh`**, külön kép-sebességkorlát. **Biztonsági értékelés** ([docs/SECURITY-ASSESSMENT.md](docs/SECURITY-ASSESSMENT.md)): trivy (1 HIGH → Go 1.26.10-re emelve, most 0), ZAP baseline + aktív (0 FAIL), terhelés (503-as egyidejűségi plafon, nem omlott össze). `scripts/ci.sh` lokális CI. Tanulság: a JSON-eszközparaméter a `\u003c`-t `<`-re alakítja (tesztfájlban a backslash-t külön kell előállítani); a webnek **egy** saját szkriptje van (a korábbi „nulla szkript” tulajdonság megváltozott). |
 | 2026-11-05 | #1 | PHP feltérképezése, javítása és lezárása (`master`), Go-s terv és kísérlet (`docs/`). |
 | 2026-11-06 | #1 | **Elérhetőség** (séma v2, migráció, `RecordAvailability`, `availability_log`, jelvény + szűrő + "M3 oldal" link), **kemény kérés-plafon**, alapból kikapcsolt kis keretű `recheck`. Hibák, amiket a tesztek kaptak el: `playable: null` ismertnek számított; a fixture-ben nem volt `false` elem. Valós migráció + napi futás: 220 kérés. |
 | 2026-11-05 | #1 | A kereső ikon és szöveg közti távolság javítva (az MDC 24 px-es ikondobozt vár; az én 27+16 px-es felülírásom átfedést okozott). Elérhetőség vizsgálata: az azonosító évekig lekérdezhető, a lejátszhatóság időablakos (lásd 3. fejezet). |

@@ -1,0 +1,714 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "m3 kereshető archívum API",
+    "version": "1.0.0",
+    "description": "Read-only API of the searchable archive of the programs of the M3 channel (Nemzeti Archivum). The data originates from the public M3 site; the terms of reuse are set by the Nemzeti Archivum. A complete copy is available as a download at /export/.",
+    "license": {
+      "name": "AGPL-3.0",
+      "identifier": "AGPL-3.0-only"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "this host"
+    }
+  ],
+  "paths": {
+    "/api/v1/": {
+      "get": {
+        "operationId": "info",
+        "summary": "Summary of the archive",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Access-Control-Allow-Origin": {
+                "description": "* (public read-only data)",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is not ready or the search took too long",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/programs": {
+      "get": {
+        "operationId": "listPrograms",
+        "summary": "Search and list programs (newest added first by default)",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Text search (case and diacritics insensitive substring). At least 3 characters; 1-2 characters search the title only. M3-... ids (comma separated) look programs up.",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "title",
+            "in": "query",
+            "description": "Search only in the title (at least 3 characters). All filters are combined with AND.",
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "subtitle",
+            "in": "query",
+            "description": "Search only in the subtitle (at least 3 characters). All filters are combined with AND.",
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "description",
+            "in": "query",
+            "description": "Search only in the description (at least 3 characters). All filters are combined with AND.",
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "creators",
+            "in": "query",
+            "description": "Search only in the creators (at least 3 characters). All filters are combined with AND.",
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "contributors",
+            "in": "query",
+            "description": "Search only in the contributors (at least 3 characters). All filters are combined with AND.",
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "genre",
+            "in": "query",
+            "description": "Search only in the genre (at least 3 characters). All filters are combined with AND.",
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "info",
+            "in": "query",
+            "description": "Search only in the info (at least 3 characters). All filters are combined with AND.",
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "year_from",
+            "in": "query",
+            "description": "Production year, from",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2100
+            }
+          },
+          {
+            "name": "year_to",
+            "in": "query",
+            "description": "Production year, to",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2100
+            }
+          },
+          {
+            "name": "playable",
+            "in": "query",
+            "description": "Only programs last observed as playable",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "highlighted",
+            "in": "query",
+            "description": "Only highlighted programs",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Order",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "newest",
+                "oldest",
+                "year_desc",
+                "year_asc",
+                "title_asc",
+                "title_desc",
+                "released_desc"
+              ],
+              "default": "newest"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "description": "Items per page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Access-Control-Allow-Origin": {
+                "description": "* (public read-only data)",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgramList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests (see Retry-After)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is not ready or the search took too long",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/programs/{id}": {
+      "get": {
+        "operationId": "getProgram",
+        "summary": "One program, with its availability history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^M3-[A-Za-z0-9]{1,27}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "Access-Control-Allow-Origin": {
+                "description": "* (public read-only data)",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Program"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such program in this archive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests (see Retry-After)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is not ready or the search took too long",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "summary": "This document",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/img/{id}.jpg": {
+      "get": {
+        "operationId": "coverImage",
+        "summary": "Cover image of a program (only when has_image is true)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^M3-[A-Z0-9]{1,27}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JPEG",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No image"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Program": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "availability"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "M3 program id",
+            "examples": [
+              "M3-59945851A60999998"
+            ],
+            "pattern": "^M3-[A-Z0-9]{1,27}$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "short_description": {
+            "type": "string"
+          },
+          "info": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extended_info": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "company": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer",
+            "description": "Production year, 0 = unknown"
+          },
+          "country": {
+            "type": "string"
+          },
+          "creators": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "contributors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "genre": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "quality": {
+            "type": "string"
+          },
+          "pg": {
+            "type": "string",
+            "description": "Age rating"
+          },
+          "ratio": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "string",
+            "description": "HH:MM:SS:FF, the last part counts frames"
+          },
+          "has_subtitle": {
+            "type": "boolean"
+          },
+          "is_series": {
+            "type": "boolean"
+          },
+          "series": {
+            "type": "string",
+            "description": "Name of the series, empty if none"
+          },
+          "episode": {
+            "type": "integer"
+          },
+          "episodes": {
+            "type": "integer"
+          },
+          "added_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When this archive first saw the program"
+          },
+          "released_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Earliest date the M3 gives for the program, null = unknown"
+          },
+          "highlighted": {
+            "type": "boolean",
+            "description": "Highlighted by the M3 (last observed)"
+          },
+          "live": {
+            "type": "boolean"
+          },
+          "catchup": {
+            "type": "boolean"
+          },
+          "rank": {
+            "type": "integer"
+          },
+          "collection": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "collection_id": {
+            "type": "string"
+          },
+          "aired_first": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "aired_last": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "refreshed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the descriptive fields were last updated from the M3, null = they hold the first seen state"
+          },
+          "has_image": {
+            "type": "boolean",
+            "description": "Whether this archive stores a cover image"
+          },
+          "image_url": {
+            "type": "string",
+            "description": "Path of the cover image on this host; only in API answers, only when has_image"
+          },
+          "m3_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The program's page on the M3 site, where it is played"
+          },
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          }
+        }
+      },
+      "Availability": {
+        "type": "object",
+        "description": "The LAST OBSERVED playability. Playability is time windowed and changes: check checked_at.",
+        "required": [
+          "playable",
+          "gone"
+        ],
+        "properties": {
+          "playable": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "null until the availability has been observed"
+          },
+          "checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "changed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "window_first": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "First known playable day"
+          },
+          "window_last": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Last known playable day"
+          },
+          "gone": {
+            "type": "boolean",
+            "description": "The M3 no longer knows the program (its data is kept here)"
+          },
+          "gone_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "history": {
+            "type": "array",
+            "description": "Changes of the playable flag, oldest first (single program endpoint only)",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          }
+        }
+      },
+      "Change": {
+        "type": "object",
+        "required": [
+          "at",
+          "playable"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "playable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProgramList": {
+        "type": "object",
+        "required": [
+          "total",
+          "capped",
+          "page",
+          "per_page",
+          "pages",
+          "items"
+        ],
+        "properties": {
+          "total": {
+            "type": "integer",
+            "description": "Number of matches, at most 10000"
+          },
+          "capped": {
+            "type": "boolean",
+            "description": "true when there are at least 10000 matches"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Program"
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

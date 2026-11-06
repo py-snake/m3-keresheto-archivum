@@ -57,6 +57,8 @@ type Config struct {
 	RecheckPerRun int
 	// RecheckDelay is the pause between two recheck requests.
 	RecheckDelay time.Duration
+	// PublicAPI / PublicExport switch the REST API and the public downloads on (both are on by default).
+	PublicAPI, PublicExport bool
 	// RefreshPerRun is how many stored programs `ingest refresh` re-fetches per run to update their
 	// descriptive data. 0 = disabled (the default).
 	RefreshPerRun int
@@ -83,6 +85,8 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 		RecheckDelay:      3 * time.Second,
 		RefreshPerRun:     0,
 		RefreshDelay:      3 * time.Second,
+		PublicAPI:         true,
+		PublicExport:      true,
 	}
 
 	var err error
@@ -128,6 +132,12 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 	}
 	if c.RecheckPerRun, err = integer(getenv("M3_RECHECK_PER_RUN"), c.RecheckPerRun, 0, 500); err != nil {
 		return nil, fmt.Errorf("M3_RECHECK_PER_RUN: %w", err)
+	}
+	if c.PublicAPI, err = boolDefault(getenv("M3_PUBLIC_API"), true); err != nil {
+		return nil, fmt.Errorf("M3_PUBLIC_API: %w", err)
+	}
+	if c.PublicExport, err = boolDefault(getenv("M3_PUBLIC_EXPORT"), true); err != nil {
+		return nil, fmt.Errorf("M3_PUBLIC_EXPORT: %w", err)
 	}
 	if c.RefreshPerRun, err = integer(getenv("M3_REFRESH_PER_RUN"), c.RefreshPerRun, 0, 500); err != nil {
 		return nil, fmt.Errorf("M3_REFRESH_PER_RUN: %w", err)
@@ -204,6 +214,13 @@ func boolean(v string) (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("expected 0/1/true/false")
+}
+
+func boolDefault(v string, def bool) (bool, error) {
+	if strings.TrimSpace(v) == "" {
+		return def, nil
+	}
+	return boolean(v)
 }
 
 func integer(v string, def, min, max int) (int, error) {

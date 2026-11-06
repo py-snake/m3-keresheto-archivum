@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the m3 downloads once a day, after the ingest runs
+
+[Timer]
+OnCalendar=*-*-* 08:30:00
+RandomizedDelaySec=10min
+Persistent=true
+Unit=m3-export.service
+
+[Install]
+WantedBy=timers.target

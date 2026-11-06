@@ -89,6 +89,7 @@ type pageData struct {
 	Elapsed    string
 	ShowAPI    bool
 	ShowExport bool
+	Export     *exportView
 }
 
 func (d *pageData) sortOptions() []sortOption {
@@ -118,7 +119,7 @@ func parsePages() (map[string]*template.Template, error) {
 		"checked":    checkedLabel,
 	}
 	pages := map[string]*template.Template{}
-	for _, name := range []string{"index"} {
+	for _, name := range []string{"index", "export", "api"} {
 		t, err := template.New(name).Funcs(funcs).ParseFS(sub, "layout.html", name+".html")
 		if err != nil {
 			return nil, err

@@ -1,0 +1,21 @@
+[Unit]
+Description=m3 downloadable exports (SQLite dump, CSV, JSONL, schema)
+
+[Container]
+ContainerName=m3-export
+Image=localhost/m3:latest
+Exec=export
+# the export reads the published database and writes <data>/export: it needs no network at all
+Network=none
+ReadOnly=true
+DropCapability=ALL
+NoNewPrivileges=true
+UserNS=keep-id
+User=%U
+Group=%G
+Memory=512m
+Volume=%h/m3/data:/data:z
+
+[Service]
+Type=oneshot
+TimeoutStartSec=30min

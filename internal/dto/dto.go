@@ -44,6 +44,20 @@ type Program struct {
 	ReleasedAt *time.Time `json:"released_at"`
 	// HasImage tells whether this archive stores a cover image. ImageURL is set by the API only
 	// (a path on the same host).
+	// More fields of the upstream, last observed. Rank, Collection, CollectionID and Catchup are always
+	// empty at the moment: the upstream does not use them yet.
+	Highlighted  bool       `json:"highlighted"`
+	Live         bool       `json:"live"`
+	Catchup      bool       `json:"catchup"`
+	Rank         int        `json:"rank"`
+	Collection   []string   `json:"collection"`
+	CollectionID string     `json:"collection_id"`
+	AiredFirst   *time.Time `json:"aired_first"`
+	AiredLast    *time.Time `json:"aired_last"`
+	// RefreshedAt is when the descriptive fields were last updated from the upstream (null = never:
+	// they hold the first seen state).
+	RefreshedAt *time.Time `json:"refreshed_at"`
+
 	HasImage     bool         `json:"has_image"`
 	ImageURL     *string      `json:"image_url,omitempty"`
 	M3URL        string       `json:"m3_url"`
@@ -61,6 +75,15 @@ type Availability struct {
 	// Gone is true when the upstream no longer knows the program (the data here is kept).
 	Gone   bool       `json:"gone"`
 	GoneAt *time.Time `json:"gone_at"`
+	// History lists the changes of the playable flag, oldest first. The single program endpoint fills
+	// it; lists and the downloads leave it out.
+	History []Change `json:"history,omitempty"`
+}
+
+// Change is one change of the playable flag.
+type Change struct {
+	At       time.Time `json:"at"`
+	Playable bool      `json:"playable"`
 }
 
 // FromModel converts a stored program. imageURL is the cover image path to publish ("" = none).
@@ -90,6 +113,15 @@ func FromModel(p model.Program, imageURL string) Program {
 		Episodes:         p.Episodes,
 		AddedAt:          time.Unix(p.AddedAt, 0).UTC(),
 		ReleasedAt:       Time(p.ReleasedAt),
+		Highlighted:      p.IsHighlighted,
+		Live:             p.IsLive,
+		Catchup:          p.IsCatchup,
+		Rank:             p.Rank,
+		Collection:       Lines(p.Collection),
+		CollectionID:     p.CollectionID,
+		AiredFirst:       Time(p.AiredFirst),
+		AiredLast:        Time(p.AiredLast),
+		RefreshedAt:      Time(p.RefreshedAt),
 		HasImage:         p.ImageState == model.ImageStored,
 		M3URL:            M3PageURL + p.ProgramID,
 		Availability: Availability{

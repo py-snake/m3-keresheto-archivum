@@ -3,7 +3,7 @@
 Az **M3** (Nemzeti Archívum) műsorainak kereshető archívuma. Egyetlen, statikus **Go** bináris, **SQLite** adatbázissal, podmanban futtatva.
 
 * a műsorlistát és a borítóképeket időzített feladatok gyűjtik az M3 oldaláról,
-* a webes felület csak olvas: egy keresőmező és a találati lista (JavaScript nélkül),
+* a webes felület csak olvas: keresés (részletes szűrőkkel és rendezéssel, gépelés közben is), találati lista, a JavaScript csak ehhez az opcionális gépelés közbeni kereséshez kell,
 * az adatbázis egyetlen fájl a **gép lemezén**, így a felhasználó közvetlenül menthető.
 
 Az eredeti PHP-s változat a `master` ágon van; ez az ág annak teljes kiváltása. A tervezés indoklása: [docs/GO-DESIGN.md](docs/GO-DESIGN.md).
@@ -38,12 +38,57 @@ Ezután: <http://127.0.0.1:8080>
 | `m3 ingest weekly` | a nyitott archívum gyűjteményei, a sorozatok minden része |
 | `m3 ingest images` | csak a hiányzó borítóképek letöltése |
 | `m3 ingest recheck` | a legrégebben ellenőrzött műsorok elérhetőségének újralekérdezése. **Alapból ki van kapcsolva**, lásd az Elérhetőség fejezetet |
+| `m3 ingest refresh` | a legrégebben frissített műsorok leíró adatainak újralekérése és javítása. **Alapból ki van kapcsolva** (`M3_REFRESH_PER_RUN`) |
+| `m3 export` | a letölthető fájlok (SQLite-dump, CSV, JSONL, séma) előállítása az `export/` könyvtárba, hálózat nélkül |
 | `m3 ingest migrate` | az adatbázis-séma frissítése (nem küld kérést az M3 felé; bármelyik gyűjtés is elvégzi) |
 | `m3 ingest item M3-… [M3-…]` | adott műsorok felvétele azonosító alapján (rendszergazdai eszköz) |
 | `m3 healthcheck [url]` | 0-val lép ki, ha a szerver válaszol |
 | `m3 version` | verzió |
 
 Kérésre felvétel a weben **nincs**: a webes oldalról semmi nem ír az adatbázisba.
+
+## Keresés
+
+* **Egyszerű keresés:** ékezet- és kis-nagybetűfüggetlen részszó-keresés a cím, alcím, leírás, készítők, közreműködők, műfaj és adatlap mezőiben (legalább 3 karakter). **1–2 karakter csak a címben keres.** `M3-…` azonosítók (vesszővel) azonosító szerint keresnek.
+* **Részletes keresés** (a „Részletes keresés és rendezés" panel): külön mezők a címre, alcímre, leírásra, készítőkre és közreműködőkre (legalább 3 karakter), **műfaj** (a valós műfajok listája darabszámmal), **évtartomány**, „csak a kiemeltek", „csak a most elérhetők". A mezők együtt szűrnek (ÉS).
+* **Rendezés:** legutóbb felvett (alap), legrégebbi, év szerint (újabb/régebbi elöl), cím szerint (A–Z / Z–A, az ékezeteket figyelmen kívül hagyva), megjelenés szerint.
+* **Gépelés közbeni keresés:** a találatok gépelés közben frissülnek (kb. 300 ms késleltetéssel, egyetlen kéréssel a gyors gépelésre). Ez egy opcionális kiegészítés: JavaScript nélkül az űrlap sima GET kéréssel ugyanazt tudja.
+* A lenyitott részletek az összes tárolt mezőt, az elérhetőségi előzményt és a „Kiemelt" jelvényt mutatják; az oldal alján látszik a lekérdezés ideje.
+
+## Letöltések
+
+A `/export/` oldalon az archívum teljes adata letölthető, hogy bárki mentheti vagy más programban felhasználhatja. A fájlokat az `m3 export` parancs állítja elő (naponta egyszer, lásd a Quadlet időzítőt), a webszerep csak kiszolgálja őket egy **fix névlistából**.
+
+| Fájl | Tartalom |
+|---|---|
+| `m3-archive.sqlite.gz` | a teljes SQLite adatbázis tömörítve (teljes szöveges indexszel és előzménnyel): használható mentés |
+| `schema.sql` | az adatbázis sémája az oszlopok leírásával (magyarul és angolul) |
+| `m3-programs.csv.gz` | minden műsor CSV-ben (UTF-8, vesszővel). A `=`, `+`, `-`, `@` jellel kezdődő szöveges cellák elé `'` kerül, hogy a táblázatkezelő ne értelmezze képletként (CSV-injekció ellen) |
+| `m3-programs.jsonl.gz` | soronként egy JSON objektum, az API szerkezetével |
+| `SHA256SUMS`, `manifest.json` | ellenőrző összegek, a generálás adatai (a manifest utolsóként készül el) |
+
+```bash
+sha256sum -c SHA256SUMS && gunzip -k m3-archive.sqlite.gz
+sqlite3 m3-archive.sqlite 'SELECT title, year FROM programs ORDER BY year LIMIT 5;'
+```
+
+Az export ugyanazt a zárolást használja, mint a gyűjtés: közben nem publikálódik új adatbázis, és minden fájl átnevezéssel, egészben cserélődik. Az adatok az M3 oldaláról származnak; **a nyilvános közzététel jogi felelőssége a te döntésed** (a borítóképek nem részei a letöltésnek). A `M3_PUBLIC_EXPORT=0` kikapcsolja.
+
+## API
+
+Csak olvasható REST API (JSON), hogy más programok is használhassák az adatokat: a leírása a `/api/` oldalon, szabványos **OpenAPI 3.1** dokumentuma a `/api/v1/openapi.json` címen van (ebből kliens generálható). Hitelesítés nincs, bármely weboldal olvashatja (CORS).
+
+| Végpont | Mit ad |
+|---|---|
+| `GET /api/v1/` | összegzés: műsorok száma, az adatbázis frissessége, korlátok |
+| `GET /api/v1/programs` | keresés és lista (`q`, `title`, `subtitle`, `description`, `creators`, `contributors`, `genre`, `info`, `year_from`, `year_to`, `playable`, `highlighted`, `sort`, `page`, `per_page`) |
+| `GET /api/v1/programs/{id}` | egy műsor az elérhetőségi előzménnyel |
+
+```bash
+curl 'http://127.0.0.1:8080/api/v1/programs?q=béke&playable=true&per_page=5'
+```
+
+Ugyanazok a szabályok és korlátok, mint a weben (legalább 3 karakter a mezőszűrőkben, legfeljebb 100 elem/oldal, legfeljebb 1000 oldal, látogatónkénti sebességkorlát). A hibák JSON-ban jönnek (`{"error":{"code":"…","message":"…"}}`), és soha nem tükrözik vissza a kérés tartalmát. Az `availability` az **utolsó megfigyelt** állapot (`checked_at`-tel): a lejátszhatóság időablakos, ezért változhatott. Sok adathoz ne az API-t olvasd végig, hanem töltsd le a teljes adatot.
 
 ## Elérhetőség: játszható-e egy műsor
 
@@ -59,6 +104,7 @@ Az M3 minden műsorhoz jelzi, hogy az adott pillanatban lejátszható-e (`playab
 * Kérések között mindig van szünet (`M3_REQUEST_DELAY_MS`), a képek és a műsorok lekérdezése is költségkerettel történik.
 * Az **`ingest recheck` alapból ki van kapcsolva**. Ha mégis kell, kis számmal kapcsold be, pl. `M3_RECHECK_PER_RUN=30` (naponta 30 kérés, 3 másodperces szünettel). A legrégebben ellenőrzött műsorokkal kezd, az eltűnteket nem kérdezi újra.
 * A megfigyelés nélküli (`Ismeretlen`) műsorok addig azok maradnak, amíg a napi lista vagy a `recheck` nem érinti őket.
+* Az **`ingest refresh` alapból ki van kapcsolva**: a leíró adatok az első látott állapotot őrzik, ezt csak kérésre javítja. Bekapcsolva kis keretű (`M3_REFRESH_PER_RUN`, lassú), a legrégebben frissítettel kezd, és **megtagadja a közzétételt, ha a válaszok sok műsor szövegét törölnék** (az M3 oldala romlott adatot adna); az eltűnt műsorokat megjelöli.
 
 ## Az adatkönyvtár (`M3_DATA_DIR`, alapból `/data`)
 
@@ -88,6 +134,10 @@ backups/m3-ÉÉÉÉHHNN-….sqlite   a korábbi adatbázisok (alapból 14 db, ke
 | `M3_MAX_REQUESTS` | **kemény plafon**: legfeljebb ennyi kérést küld egy gyűjtő folyamat az M3 felé, utána leáll és a többit a következő futásra hagyja | `2000` |
 | `M3_RECHECK_PER_RUN` | az `ingest recheck` futásonként ennyi műsort kérdez le újra (`0` = kikapcsolva, legfeljebb `500`) | `0` |
 | `M3_RECHECK_DELAY_MS` | szünet két újraellenőrző kérés között (legalább `500`) | `3000` |
+| `M3_REFRESH_PER_RUN` | az `ingest refresh` futásonként ennyi műsor leíró adatát kérdezi le újra és frissíti (`0` = kikapcsolva, legfeljebb `500`) | `0` |
+| `M3_REFRESH_DELAY_MS` | szünet két frissítő kérés között (legalább `500`) | `3000` |
+| `M3_PUBLIC_API` | a REST API be van-e kapcsolva (`0` = ki) | `1` |
+| `M3_PUBLIC_EXPORT` | a nyilvános letöltések be vannak-e kapcsolva (`0` = ki) | `1` |
 | `UPSTREAM_USER_AGENT` | a kimenő kérések User-Agentje | valódi böngésző (Chrome) |
 | `UPSTREAM_PROXY` | minden kimenő forgalom ezen a proxyn megy át | nincs |
 | `UPSTREAM_PROXY_INSECURE` | a **proxy** TLS-tanúsítványát nem ellenőrzi | kikapcsolva |
@@ -119,7 +169,7 @@ UPSTREAM_PROXY_INSECURE=1
 
 * A webszerep egyetlen statikus bináris `scratch` alapú image-ben: nincs shell, csomagkezelő, értelmező. Nem root felhasználóként, **csak olvasható** gyökér- és adat-fájlrendszerrel, minden Linux-képesség nélkül, **kimenő hálózat nélkül** fut.
 * Az adatbázist csak olvasható és megváltoztathatatlan módban nyitja meg, **deny-by-default SQLite authorizer** mögött (SELECT-en kívül semmi: `ATTACH`, írás, `PRAGMA`, `sqlite_master` tiltott).
-* Minden válaszon szigorú fejlécek: CSP (`default-src 'none'`, nincs script), `nosniff`, `Referrer-Policy: no-referrer`, HSTS és társaik. Nincs JavaScript, nincs süti, nincs külső betöltés.
+* Minden válaszon szigorú fejlécek: CSP (`default-src 'none'`; egyetlen engedett script a saját `search.js`, nincs inline script, nincs külső betöltés), `nosniff`, `Referrer-Policy: no-referrer`, HSTS és társaik. Nincs JavaScript, nincs süti, nincs külső betöltés.
 * A felhasználói keresőszöveg sosem SQL vagy FTS-szintaxis, mindig kötött paraméter, idézőjelezve.
 * A kimenő kliens egyetlen hosztra szól, az átirányítások is megkötöttek, minden válasz mérete és állapotkódja ellenőrzött, a sütiket eldobja. Az M3-tól jövő adat nem megbízható: ellenőrzött, megtisztított, és ha túl sok az érvénytelen elem, a futás **semmit nem publikál**.
 * A borítóképeket a program dekódolja és újrakódolja (metaadat, hozzáfűzött adat, dekompressziós bomba kiszűrve), és `os.Root`-on át szolgálja ki, ami kizárja az útvonal-bejárást és a szimbolikus linkes kitörést.
@@ -131,10 +181,11 @@ A „feltörhetetlenség" nem garantálható; a terv és a maradó kockázatok a
 ```bash
 go vet ./... && go test -race ./...        # egység- és integrációs tesztek
 govulncheck ./...                           # ismert sebezhetőségek
-go test -fuzz=FuzzParseProgram ./internal/upstream   # fuzz (példa)
+go test -run '^$' -fuzz='^FuzzSearchQueryFields$' -fuzztime=30s ./internal/store   # fuzzerek: keresés, API, feldolgozás, képek
 
 podman build --target m3 -t localhost/m3:dev . && podman build --target e2e-proxy -t localhost/m3-e2e-proxy:dev .
 tests/e2e/run.sh                            # végponttól végpontig, valódi M3 oldallal, izolált podman hálózatokon
+python3 tests/e2e/browser.py http://127.0.0.1:8080   # valódi böngésző: a gépelés közbeni keresés, CSP-sértés nélkül
 ```
 
 Az `tests/e2e/run.sh` bizonyítja, hogy a proxyn át futó gyűjtés **minden** forgalma a proxyn megy ki: a gyűjtő konténer egy `--internal` hálózaton van, aminek nincs útja az internet felé.
