@@ -27,7 +27,7 @@ podman run -d --name m3-web -p 127.0.0.1:8080:8080 --read-only --cap-drop=ALL --
 
 Ezután: <http://127.0.0.1:8080>
 
-Élesben a [deploy/quadlet](deploy/quadlet) egységei (systemd + podman) futtatják a webet, az időzített gyűjtést és a Cloudflare Tunnelt.
+Élesben a [deploy/quadlet](deploy/quadlet) egységei (systemd + podman) futtatják a webet és az időzített gyűjtést; a kiszolgálás útja Cloudflare Tunnel → nginx → m3-web ([deploy/INSTALL.md](deploy/INSTALL.md), nginx-konfig: [deploy/nginx/m3.conf](deploy/nginx/m3.conf)).
 
 ## Parancsok
 

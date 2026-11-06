@@ -71,7 +71,7 @@ A PHP-oldali hibaosztályok (SEC-1…14, BUG-1…17, lásd [CLAUDE.md](../CLAUDE
                         Internet
                            │ (HTTPS, Cloudflare WAF / rate limit / cache)
                    ┌───────▼────────┐
-                   │   cloudflared  │  két hálózaton: m3-internal + alapértelmezett (kimenő)
+                   │ cloudflared→nginx│ nginx: web + m3-internal; a cloudflared NEM éri el az m3-at
                    └───────┬────────┘  token: podman secret
                            │ HTTP (privát hálózat)
               ┌────────────▼─────────────┐
@@ -235,7 +235,7 @@ A kísérlet ezzel a beállítással lefutott: a csak olvasható mountról olvas
 | Egység | Hálózat | Mount | Megjegyzés |
 |---|---|---|---|
 | `m3-web.container` | `m3-internal` (`Internal=true`, **nincs kimenő forgalom**) | `/srv/m3/data:/data:ro` | nincs publikált port; healthcheck a bináris `healthcheck` alparancsával (scratch: nincs curl); `Memory`, `PidsLimit` korlát |
-| `m3-cloudflared.container` | `m3-internal` + alapértelmezett (kimenő) | – | `Secret=` a tunnel tokennek; origin: `http://m3-web:8080` |
+| *(nincs `m3-cloudflared`)* | a felhasználó saját cloudflared-je → saját nginx → `m3-web` (fix cím: `10.89.77.10`) | – | az nginx egy `Network=m3-internal.network` sort kap; konfig: `deploy/nginx/m3.conf`; leírás: `deploy/INSTALL.md` |
 | `m3-ingest@daily/weekly.service` + `.timer` | alapértelmezett (kimenő), **nincs** kapcsolat a webes hálózattal | `/srv/m3/data:/data:rw` | egyszeri konténer, `ReadOnly=true`, cap-drop, időkorlát |
 
 - **Titok:** a rendszerben egyetlen titok van, a tunnel token (`podman secret`), nem a repóban.

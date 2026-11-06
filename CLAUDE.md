@@ -41,7 +41,7 @@ internal/fakeupstream/    hamis M3 szerver a tesztekhez (tests/fixtures valós f
 web/                      beágyazott sablonok és statikus fájlok (embed)
 tests/fixtures/           rögzített valós upstream válaszok
 tests/e2e/                run.sh (podman, valós upstream) + proxy/ (teszt-CONNECT-proxy)
-deploy/quadlet/           systemd+podman egységek (web, cloudflared, ingest időzítők, hálózatok)
+deploy/quadlet/           systemd+podman egységek (web, ingest/export időzítők, hálózatok); deploy/nginx/m3.conf + deploy/INSTALL.md: Cloudflare Tunnel → nginx → m3-web
 Containerfile             digestre rögzített build, scratch végső image (cél: m3 | e2e-proxy)
 docs/                     GO-DESIGN.md, PHP-HISTORY.md, spikes/
 ```
@@ -125,7 +125,7 @@ M3_DATA_DIR=$S/real M3_IMAGES_PER_RUN=20 go run ./cmd/m3 ingest weekly
 0. [x] ~~Elérhetőség tárolása és frissítése~~ **kész** (2026-11-06). Nyitva: a `recheck` élesben nincs kipróbálva a valós M3-mal (szándékosan, a kérések kímélése miatt); a következő lejátszható ablak nincs külön kezelve; az `availability_log` a felületen nem látszik.
 0. [ ] **Kereső UI**: részletes (mezőnkénti) szűrés és gépelés közbeni azonnali találatok: lásd a felhasználói kérdésekre adott válasz (2026-11-05); az azonnali keresés **JS-t** és `script-src 'self'` CSP-bővítést igényel, ezért a felhasználó dönt.
 1. [x] ~~S15/S17~~ **kész** (2026-11-06, lásd 6. fejezet). Nyitva: független ember általi áttekintés, `grype`, elosztott DoS-próba.
-3. [ ] **Quadlet élesben**: a generátor hibátlan, de az egységeket **nem indítottuk el** (cloudflared token kell). Digestre rögzíteni a cloudflared image-et.
+3. [ ] **Quadlet élesben**: a generátor hibátlan, de az egységeket **nem indítottuk el** A kiszolgálás útja a felhasználó kérésére **Cloudflare Tunnel → nginx → m3-web** (a felhasználó saját nginx-e és cloudflared-je; az m3-nek nincs saját cloudflared egysége). A generátor a **podman 4.9.3-mal és 5.x-szel is** hibátlan (a 4.9 nem ismeri a `Memory=` kulcsot, ezért `PodmanArgs=--memory=`; drop-in sem megy, az nginx egységébe egy sort kell írni); az nginx → m3-web útvonalat podmanban kipróbáltuk (POST 403, CSP megmarad, látogatónkénti sebességkorlát a `CF-Connecting-IP` szerint).
 4. [ ] **CSV/gz export** (GO-DESIGN D4): nincs megvalósítva; ha kell, a CSV-injection escape kötelező.
 5. [ ] **`image_state = 2`** (az upstreamnek nincs képe) újrapróbálása (pl. 30 nap után): most végleges.
 6. [ ] NFC-normalizálás (terv): nincs, mert `golang.org/x/text` új modul lenne; a vezérlő/bidi karakterek szűrése megvan.

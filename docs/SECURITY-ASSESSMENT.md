@@ -12,7 +12,7 @@
 
 ## Mi érhető el kívülről
 
-A Cloudflare Tunnelen át **egyetlen** dolog: a `m3 serve` webszerep (HTTP, GET/HEAD). Nincs nyitott bejövő port a gépen. A webszerep:
+A Cloudflare Tunnelen és az nginx-en át **egyetlen** dolog: a `m3 serve` webszerep (HTTP, GET/HEAD). Nincs nyitott bejövő port a gépen. A webszerep:
 
 * nem fogad feltöltést, nincs bejelentkezés, süti, munkamenet, adatbázis-írás;
 * nincs kimenő hálózata, nincs titka (a Cloudflare token a cloudflared konténerben van);
@@ -63,13 +63,13 @@ Felületei: keresés (HTML), borítóképek, statikus fájlok, REST API (JSON), 
 
 ## Amit a telepítés előtt meg kell tenned (ez csökkenti a legtöbbet)
 
-1. **Ne a saját, mindennapi felhasználói fiókodban futtasd.** A konténerek `--userns=keep-id` módban a futtató felhasználó jogaival fut(hat)nak: egy konténerkitörés ott a **te fájljaidhoz** (otthoni könyvtár, böngészőprofil, SSH-kulcsok) vezetne. Hozz létre egy **dedikált, jogosultság nélküli felhasználót** (`m3`, zárolt jelszóval, `loginctl enable-linger m3`), és az egységeket annak a felhasználónak a könyvtárába telepítsd. Még jobb egy külön virtuális gép vagy külön (akár olcsó) gép/VPS.
+1. **Ne olyan felhasználóval futtasd, amelyik más érzékeny dolgot is kezel.** (Ha a Cloudflare Tunnel → nginx → m3 útvonalat használod, az m3 az nginx felhasználója alatt fut, mert a hálózatuk csak így osztható meg: ekkor a kitörés hatása az a felhasználó minden konténere és secretje. Ez a kompromisszum, lásd a `deploy/INSTALL.md`-t.) A konténerek `--userns=keep-id` módban a futtató felhasználó jogaival fut(hat)nak: egy konténerkitörés ott a **te fájljaidhoz** (otthoni könyvtár, böngészőprofil, SSH-kulcsok) vezetne. Hozz létre egy **dedikált, jogosultság nélküli felhasználót** (`m3`, zárolt jelszóval, `loginctl enable-linger m3`), és az egységeket annak a felhasználónak a könyvtárába telepítsd. Még jobb egy külön virtuális gép vagy külön (akár olcsó) gép/VPS.
 2. **Ne tárolj érzékeny adatot azon a gépen/fiókban**, ahol ez fut, és ne legyen elérhető onnan a belső hálózatod (különösen, ha otthoni hálózaton fut).
 3. **Tartsd frissen:** a kernelt, a podmant, és építsd újra a binárist a Go és a függőségek frissítésekor (`govulncheck ./...` rendszeresen, pl. hetente).
-4. **Pin a cloudflared image-et digestre**, és frissítsd.
+4. **Pinneld a cloudflared és az nginx image-et digestre**, vagy figyeld a frissítéseket (`AutoUpdate=registry` esetén a változás nem látható előre).
 5. **Futtasd le a hiányzó vizsgálatokat** a telepítés előtt: `trivy`/`grype` az image-en, OWASP ZAP baseline az élő szolgáltatáson; idealisan egy független ember nézze át.
 6. A Cloudflare oldalon kapcsold be a **sebességkorlátot és a bot-védelmet**, és a fiókon a kétlépcsős azonosítást.
-7. Állítsd be helyesen az `M3_TRUSTED_PROXIES`-t (a cloudflared hálózata). Rosszul beállítva minden látogató egy kliensnek látszik, és a sebességkorlát mindenkit együtt büntet.
+7. Az `M3_TRUSTED_PROXIES` az `m3-internal` hálózat (csak az nginx és az m3-web van rajta). Az nginx konfigurációnak át kell adnia a `CF-Connecting-IP`-t (`deploy/nginx/m3.conf` megteszi). Rosszul beállítva minden látogató egy kliensnek látszik, és a sebességkorlát mindenkit együtt büntet.
 8. **Figyeld a naplót** és az időzített feladatok sikerét; az `OnFailure` értesítés még nincs bekötve.
 
 ## Ha a legkisebb kockázat a cél

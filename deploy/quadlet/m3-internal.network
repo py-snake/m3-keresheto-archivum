@@ -2,4 +2,5 @@
 NetworkName=m3-internal
 # no route to the outside: containers on this network cannot open outbound connections
 Internal=true
+# only m3-web and nginx join this network (nginx via one extra Network= line in its own unit)
 Subnet=10.89.77.0/24
