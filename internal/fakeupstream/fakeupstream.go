@@ -152,6 +152,16 @@ func New(t testing.TB) *Server {
 	return s
 }
 
+// Each calls f for every recorded request, in order.
+func (s *Server) Each(f func(Request)) {
+	s.mu.Lock()
+	reqs := append([]Request(nil), s.Requests...)
+	s.mu.Unlock()
+	for _, r := range reqs {
+		f(r)
+	}
+}
+
 // Count returns how many recorded requests had the given path.
 func (s *Server) Count(path string) int {
 	s.mu.Lock()

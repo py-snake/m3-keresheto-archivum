@@ -5,6 +5,8 @@
 //	m3 ingest weekly              fetch the open-archive collections and their series
 //	m3 ingest item M3-... [...]   fetch specific programs by id (administrator tool)
 //	m3 ingest images              download the pending cover images only
+//	m3 ingest recheck             re-query the availability of the stalest programs (off unless M3_RECHECK_PER_RUN is set)
+//	m3 ingest migrate             upgrade the database schema (no upstream requests)
 //	m3 healthcheck [url]          exit 0 when the server answers (for container health checks)
 //	m3 version
 //
@@ -96,6 +98,10 @@ func runIngest(ctx context.Context, log *slog.Logger, args []string) int {
 		res, err = g.Weekly(ctx)
 	case "images":
 		res, err = g.Images(ctx)
+	case "recheck":
+		res, err = g.Recheck(ctx)
+	case "migrate":
+		res, err = g.Migrate(ctx)
 	case "item":
 		if len(args) < 2 {
 			log.Error("usage: m3 ingest item M3-... [M3-...]")
@@ -133,6 +139,7 @@ func newIngestor(cfg *config.Config, log *slog.Logger) (*ingest.Ingestor, error)
 		ProxyInsecure: cfg.UpstreamProxyInsecure,
 		RootCAs:       pool,
 		Delay:         cfg.RequestDelay,
+		MaxRequests:   cfg.MaxRequests,
 	})
 	if err != nil {
 		return nil, err
@@ -144,6 +151,7 @@ func newIngestor(cfg *config.Config, log *slog.Logger) (*ingest.Ingestor, error)
 	return &ingest.Ingestor{
 		Dir: cfg.DataDir, Keep: cfg.BackupsKept, Up: up, Log: log,
 		ImagesPerRun: cfg.ImagesPerRun, ImageMaxWidth: cfg.ImageMaxWidth,
+		RecheckPerRun: cfg.RecheckPerRun, RecheckDelay: cfg.RecheckDelay,
 	}, nil
 }
 
@@ -193,7 +201,7 @@ func version() string {
 func usage() {
 	fmt.Fprint(os.Stderr, `usage:
   m3 serve
-  m3 ingest daily|weekly|images
+  m3 ingest daily|weekly|images|recheck|migrate
   m3 ingest item M3-... [M3-...]
   m3 healthcheck [url]
   m3 version

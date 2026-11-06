@@ -26,6 +26,7 @@
 				</div>
 			</div>
 			<button id="search-button" type="submit" class="mdc-button mdc-button--raised"><span class="mdc-button__ripple"></span>Keresés</button>
+			<label class="only-playable mdc-typography--caption"><input type="checkbox" name="elerheto" value="1"{{if .OnlyPlayable}} checked{{end}}> Csak a most elérhetők</label>
 		</form>
 
 		{{template "content" .}}

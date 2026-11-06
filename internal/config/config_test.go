@@ -106,3 +106,27 @@ func TestNumbersAndNetworks(t *testing.T) {
 		t.Fatalf("%+v %v", c, err)
 	}
 }
+
+func TestRequestBudgetAndRecheckDefaultsAreGentle(t *testing.T) {
+	c, err := FromEnv(env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RecheckPerRun != 0 {
+		t.Fatalf("the recheck must be OFF by default, got %d", c.RecheckPerRun)
+	}
+	if c.MaxRequests != 2000 || c.RecheckDelay != 3*time.Second {
+		t.Fatalf("%d %s", c.MaxRequests, c.RecheckDelay)
+	}
+	c, err = FromEnv(env(map[string]string{"M3_RECHECK_PER_RUN": "30", "M3_MAX_REQUESTS": "500", "M3_RECHECK_DELAY_MS": "5000"}))
+	if err != nil || c.RecheckPerRun != 30 || c.MaxRequests != 500 || c.RecheckDelay != 5*time.Second {
+		t.Fatalf("%+v %v", c, err)
+	}
+	for k, v := range map[string]string{
+		"M3_RECHECK_PER_RUN": "501", "M3_MAX_REQUESTS": "9", "M3_RECHECK_DELAY_MS": "100", "M3_RECHECK_DELAY_MS ": "x",
+	} {
+		if _, err := FromEnv(env(map[string]string{strings.TrimSpace(k): v})); err == nil {
+			t.Errorf("%s=%s accepted: the limits must keep the program from hammering the upstream", k, v)
+		}
+	}
+}

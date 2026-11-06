@@ -30,6 +30,11 @@ const (
 // ErrNotFound means the upstream knows nothing about the requested item.
 var ErrNotFound = errors.New("upstream: not found")
 
+// ErrBudget means the client has used up its request budget. The budget is a hard ceiling on the
+// load this program puts on the upstream in one process: when it is reached the work stops and the
+// rest is left for a later run.
+var ErrBudget = errors.New("upstream: request budget exhausted")
+
 // StatusError is returned for any non-2xx response.
 type StatusError struct{ Code int }
 
@@ -55,6 +60,8 @@ type Options struct {
 	MaxBody int64
 	// Delay is the minimum pause between two consecutive requests.
 	Delay time.Duration
+	// MaxRequests is the most requests this client sends (0 = unlimited). Failed requests count too.
+	MaxRequests int
 }
 
 // Client is a restricted HTTP client for one https host. It is safe for concurrent use,
@@ -65,9 +72,11 @@ type Client struct {
 	hc      *http.Client
 	maxBody int64
 	delay   time.Duration
+	maxReq  int
 
 	mu   sync.Mutex
 	last time.Time
+	sent int
 }
 
 // NewClient validates the options and builds the client.
@@ -113,7 +122,7 @@ func NewClient(o Options) (*Client, error) {
 		IdleConnTimeout:       30 * time.Second,
 	}
 
-	c := &Client{base: base, ua: o.UserAgent, maxBody: o.MaxBody, delay: o.Delay}
+	c := &Client{base: base, ua: o.UserAgent, maxBody: o.MaxBody, delay: o.Delay, maxReq: o.MaxRequests}
 	c.hc = &http.Client{
 		Transport: tr,
 		Timeout:   o.Timeout,
@@ -140,6 +149,24 @@ func (c *Client) url(path string, q url.Values) *url.URL {
 	u.Path = path
 	u.RawQuery = q.Encode()
 	return &u
+}
+
+// spend counts one request against the budget.
+func (c *Client) spend() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.maxReq > 0 && c.sent >= c.maxReq {
+		return ErrBudget
+	}
+	c.sent++
+	return nil
+}
+
+// Requests returns how many requests have been sent so far.
+func (c *Client) Requests() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sent
 }
 
 // throttle enforces the minimum delay between requests.
@@ -171,6 +198,9 @@ func (c *Client) get(ctx context.Context, u *url.URL, accept string, limit int64
 	}
 	if limit <= 0 || limit > c.maxBody {
 		limit = c.maxBody
+	}
+	if err := c.spend(); err != nil {
+		return nil, err
 	}
 	if err := c.throttle(ctx); err != nil {
 		return nil, err

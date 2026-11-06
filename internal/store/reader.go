@@ -89,7 +89,8 @@ type Result struct {
 
 const selectColumns = `id, program_id, title, subtitle, info, extended_info, description, short_description, company,
 	year, country, creators, contributors, genre, quality, pg, ratio, duration,
-	has_subtitle, is_series, series_id, episode, episodes, added_at, released_at, image_state`
+	has_subtitle, is_series, series_id, episode, episodes, added_at, released_at, image_state,
+	playable, playable_checked_at, playable_changed_at, window_first, window_last, gone_at`
 
 // NormalizeTerm trims a search term and enforces the length limit. It returns false when the
 // term contains characters that never belong into a search (NUL, invalid UTF-8).
@@ -104,25 +105,49 @@ func NormalizeTerm(s string) (string, bool) {
 	return s, true
 }
 
-// Search returns one page of programs, newest first.
+// Query describes a search.
+type Query struct {
+	// Term is the user's search text (see SearchQuery for how it is interpreted).
+	Term string
+	// OnlyPlayable keeps only programs whose last observed state is playable.
+	OnlyPlayable  bool
+	Limit, Offset int
+}
+
+// Search returns one page of programs, newest first. See SearchQuery.
+func (r *Reader) Search(ctx context.Context, term string, limit, offset int) (Result, error) {
+	return r.SearchQuery(ctx, Query{Term: term, Limit: limit, Offset: offset})
+}
+
+// SearchQuery returns one page of programs, newest first.
 //
 //   - an empty term lists everything;
 //   - "M3-..." (comma separated) looks identifiers up;
 //   - anything else is a text search over title, subtitle, info, extended info, description,
 //     creators, contributors and genre. The user's text is never FTS syntax: it is passed as one
 //     quoted phrase, every query value is a bound parameter.
-func (r *Reader) Search(ctx context.Context, term string, limit, offset int) (Result, error) {
-	term, ok := NormalizeTerm(term)
+func (r *Reader) SearchQuery(ctx context.Context, q Query) (Result, error) {
+	term, ok := NormalizeTerm(q.Term)
 	if !ok {
 		return Result{}, nil
 	}
-	if limit < 1 || limit > 100 || offset < 0 {
+	if q.Limit < 1 || q.Limit > 100 || q.Offset < 0 {
 		return Result{}, errors.New("store: bad paging")
+	}
+	and := func(where string) string { // appends the availability filter to a WHERE clause
+		switch {
+		case !q.OnlyPlayable:
+			return where
+		case where == "":
+			return " WHERE playable = 1"
+		}
+		return where + " AND playable = 1"
 	}
 
 	switch {
 	case term == "":
-		return r.run(ctx, "", nil, "SELECT count(*) FROM programs", nil, limit, offset)
+		where := and("")
+		return r.run(ctx, where, nil, "SELECT count(*) FROM programs"+where, nil, q.Limit, q.Offset)
 
 	case progid.LooksLikeIDQuery(term) && len(progid.ParseList(term, MaxIDs)) > 0:
 		ids := progid.ParseList(term, MaxIDs)
@@ -130,17 +155,17 @@ func (r *Reader) Search(ctx context.Context, term string, limit, offset int) (Re
 		for i, id := range ids {
 			args[i] = id
 		}
-		where := " WHERE program_id IN (" + placeholders(len(ids)) + ")"
-		return r.run(ctx, where, args, "SELECT count(*) FROM programs"+where, args, limit, offset)
+		where := and(" WHERE program_id IN (" + placeholders(len(ids)) + ")")
+		return r.run(ctx, where, args, "SELECT count(*) FROM programs"+where, args, q.Limit, q.Offset)
 
 	default:
 		if utf8.RuneCountInString(term) < MinTermRunes {
 			return Result{}, ErrTermTooShort
 		}
 		phrase := `"` + strings.ReplaceAll(term, `"`, `""`) + `"`
-		where := " WHERE id IN (SELECT rowid FROM programs_fts WHERE programs_fts MATCH ?)"
-		count := fmt.Sprintf("SELECT count(*) FROM (SELECT rowid FROM programs_fts WHERE programs_fts MATCH ? LIMIT %d)", CountCap+1)
-		res, err := r.run(ctx, where, []any{phrase}, count, []any{phrase}, limit, offset)
+		where := and(" WHERE id IN (SELECT rowid FROM programs_fts WHERE programs_fts MATCH ?)")
+		count := fmt.Sprintf("SELECT count(*) FROM (SELECT id FROM programs%s LIMIT %d)", where, CountCap+1)
+		res, err := r.run(ctx, where, []any{phrase}, count, []any{phrase}, q.Limit, q.Offset)
 		if err == nil && res.Total > CountCap {
 			res.Total, res.Capped = CountCap, true
 		}
@@ -166,13 +191,16 @@ func (r *Reader) run(ctx context.Context, where string, args []any, countSQL str
 	for rows.Next() {
 		var p model.Program
 		var hasSub, isSeries int
+		var playable sql.NullInt64
 		if err := rows.Scan(&p.ID, &p.ProgramID, &p.Title, &p.Subtitle, &p.Info, &p.ExtendedInfo, &p.Description,
 			&p.ShortDescription, &p.Company, &p.Year, &p.Country, &p.Creators, &p.Contributors, &p.Genre,
 			&p.Quality, &p.PG, &p.Ratio, &p.Duration, &hasSub, &isSeries, &p.SeriesID, &p.Episode, &p.Episodes,
-			&p.AddedAt, &p.ReleasedAt, &p.ImageState); err != nil {
+			&p.AddedAt, &p.ReleasedAt, &p.ImageState,
+			&playable, &p.PlayableCheckedAt, &p.PlayableChangedAt, &p.WindowFirst, &p.WindowLast, &p.GoneAt); err != nil {
 			return Result{}, err
 		}
 		p.HasSubtitle, p.IsSeries = hasSub != 0, isSeries != 0
+		p.PlayableKnown, p.Playable = playable.Valid, playable.Valid && playable.Int64 == 1
 		res.Items = append(res.Items, p)
 	}
 	return res, rows.Err()

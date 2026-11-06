@@ -4,7 +4,7 @@
 > Minden session: (1) elolvassa, (2) munka közben frissen tartja, (3) a végén a [Változásnaplóba](#10-változásnapló) ír egy sort.
 
 - **Branch:** `go`. A `master` a lezárt PHP-verzió (referencia, **nem érdekes**: a felhasználó szerint „a php nem érdekel"). Ezen az ágon a PHP kód már nincs; tanulságai: [docs/PHP-HISTORY.md](docs/PHP-HISTORY.md).
-- **Állapot (2026-11-05):** a Go program **kész és tesztelt**: `go vet`, `go test -race ./...`, `govulncheck` tiszta, `tests/e2e/run.sh` **48/48**, valós M3 adaton futtatva. Nem commitolt/pusholt kód nincs a munkában, kivéve ahol a naplóban jelezve.
+- **Állapot (2026-11-06):** a Go program **kész és tesztelt**, a séma **2-es verziójú** (elérhetőség, lásd 3. fejezet): `go vet`, `go test -race ./...`, `govulncheck` tiszta, `tests/e2e/run.sh` **51/51**, valós M3 adaton futtatva. Nem commitolt/pusholt kód nincs a munkában, kivéve ahol a naplóban jelezve.
 - **Tervdokumentum:** [docs/GO-DESIGN.md](docs/GO-DESIGN.md). **Felhasználói leírás (magyar):** [README.md](README.md).
 - **Utolsó mérés a valós rendszeren:** 2026-11-05.
 
@@ -62,6 +62,7 @@ docs/                     GO-DESIGN.md, PHP-HISTORY.md, spikes/
 - **Elérhetőség (mérve 2026-11-05):** az API-ban van `playable` jelző és `start_playable_dts` (napi bontású „lejátszható" dátumlista, 2019-07-25-től 2026-12-ig). A mai daily_program 165 eleme mind `playable: true`; a műsorújság 349 elemén 123 `true` / 226 `false`. **Az azonosító évekkel később is lekérdezhető**: a repó 2023-12-16-i két azonosítója ma is teljes metaadatot ad az `item?id=`-n (`János vitéz`, `Mirr-Murr kandúr kalandjai`), de mindkettő `playable: false`, lejárt ablakkal. A tárolt (weekly/nyitott archívum) készletből 24 véletlen elem: 19 `playable=false` lejárt ablakkal, 3 dátum nélkül, 1 `true`, 1 `false` jövőbeli ablakkal. **Következtetés (óvatosan, kis minta, a jelentést az oldal nem dokumentálja):** a metaadat tartósan elérhető, a *lejátszhatóság* időablakos és változik. A program ezt **nem tárolja** (csak az `released_at` = legkorábbi dátum), tehát a felület nem tudja megmondani, mi nézhető meg épp most.
 - **Az M3 műsoroldala és a közvetlen link (mérve 2026-11-05, headless Chromium 155, látogatóként betöltve):** a műsor oldala `https://nemzetiarchivum.hu/m3/<program_id>` (az M3 front-endje `window.location.origin+"/m3/"+id`-t nyit). `playable:false` műsorra **közvetlen linkkel is** betöltődik az oldal a metaadatokkal (cím, év, leírás, rendező), de a lejátszó helyén **„Ez a műsor jelenleg nem elérhető!"** áll (a front-end kódja: `if (e.playable || e.isLivePlaying)` mutatja a lejátszót, különben a `not-playable` dobozt). `playable:true` műsorra a lejátszó megjelenik; a headless Chromiumban `DRM: KeySystem Access Denied` hibával áll meg (a stream **DRM-védett**, Widevine kell), így a tényleges lejátszást a felhasználó saját böngészőjében kell kipróbálni. **Szándékosan nem hívtuk közvetlenül a `/api/m3/v3/stream` végpontot** a nem elérhetőnek jelölt műsorokra: az a jogosultsági jelzés megkerülésének kísérlete lenne.
 - **Az eredeti projekt lejátszója** (2023-12-17 `59fbe34`, 2024-06-15-én feladva): a kattintásra lekérte az M3-tól a stream-címet (a cím hexa-escape-pel elrejtve), és video.js-sel játszotta HLS-ként (`application/x-mpegURL`), `playable` ellenőrzés **nélkül**. Az M3 később DRM-re váltott, ezért adta fel („api is CORSed").
+- **Elérhetőség tárolása (megvalósítva 2026-11-06, séma v2):** `programs.playable` (NULL = soha nem figyeltük meg), `playable_checked_at`, `playable_changed_at`, `window_first/last` (a `start_playable_dts` legkorábbi/legkésőbbi napja), `gone_at`, plusz append-only `availability_log` (csak **változáskor** kerül sor). **A leíró mezők "első látott", az elérhetőség "utolsó megfigyelt"**: `Writer.RecordAvailability` csak az elérhetőségi oszlopokat frissíti. Forrásai ingyenesek: a napi lista/műsorújság elemei és az új műsorok `item` válasza. Az `m3 ingest recheck` **alapból ki van kapcsolva** (`M3_RECHECK_PER_RUN=0`), bekapcsolva kis keretű (≤500, 3 s szünet), a legrégebben ellenőrzöttel kezd, `gone_at`-tel jelöli a már nem ismert műsort, a flag nélküli választ is ellenőrzöttnek számolja (`TouchChecked`), különben mindig ugyanazt kérdezné. **Kemény kérés-plafon** (`M3_MAX_REQUESTS`, alap 2000/folyamat; `upstream.ErrBudget`): a gyűjtés kecsesen leáll, nem hiba. Migráció: `internal/store/migrate.go`; bármely ingest futás frissíti a régi adatbázist a munkamásolaton, a webolvasó csak a pontos verziót fogadja (v1 fájlt nem szolgál ki, amíg nem migrálták: `m3 ingest migrate`). **Valós futás (2026-11-06):** migráció a 962 műsoros v1 adatbázison 0 kéréssel; napi gyűjtés 220 kéréssel (2 lista + 218 kép): 263 műsor elérhetősége megfigyelve (165 elérhető, 98 nem), a többi 917 `Ismeretlen`.
 - **Go mux:** a `..` szegmenses útra **307** átirányítást ad a megtisztított címre (nem 404); tartalmat nem szolgál ki.
 
 ## 4. Tanulságok ebből a munkából (ne ismételd)
@@ -72,7 +73,8 @@ docs/                     GO-DESIGN.md, PHP-HISTORY.md, spikes/
 4. **Sosem pipe-old a tesztet** (`go test | tail`) úgy, hogy a kilépési kódra támaszkodsz: a pipe elnyeli. (A PHP-s munkában emiatt ment le egy törött teszt commitba.)
 5. A `json.Marshal` az érvénytelen UTF-8-at U+FFFD-re cseréli; a tisztító az U+FFFD-t is eltávolítja.
 6. A `os.OpenRoot` (Go ≥1.24) a szimbolikus linkes kitörést is kizárja; a kép-kiszolgálás erre épül.
-7. Harmadik fél szerverén **ne** próbálj támadó jellegű bemenetet (az automatikus engedélyező ezt jogosan tiltotta).
+7. **Go `json.Unmarshal` a `null`-t hiba nélkül `false`-ra olvassa `bool`-ba**: a `playable: null` így "nem elérhető" megfigyelés lett volna. A `jsonStrictBool` ezt külön kezeli; teszt: `TestParsePlayableAndWindow`.
+8. Harmadik fél szerverén **ne** próbálj támadó jellegű bemenetet (az automatikus engedélyező ezt jogosan tiltotta).
 
 ## 5. Ellenőrző receptek
 
@@ -85,7 +87,7 @@ go test -run '^$' -fuzz='^FuzzParseProgram$' -fuzztime=30s ./internal/upstream  
 M3_BENCH_DB=/út/m3.sqlite go test -run TestSearchLatencyOnRealData -v ./internal/store
 
 podman build --target m3 -t localhost/m3:dev . && podman build --target e2e-proxy -t localhost/m3-e2e-proxy:dev .
-tests/e2e/run.sh                                                   # valós upstream, izolált podman hálózatok; 48/48 volt
+tests/e2e/run.sh                                                   # valós upstream, izolált podman hálózatok; 51/51 volt
 QUADLET_UNIT_DIRS=$PWD/deploy/quadlet /usr/lib/systemd/user-generators/podman-user-generator --dryrun   # Quadlet validálás
 
 # valós adat gyűjtése helyben (a scratchpadre)
@@ -119,7 +121,7 @@ M3_DATA_DIR=$S/real M3_IMAGES_PER_RUN=20 go run ./cmd/m3 ingest weekly
 
 ## 7. Nyitott teendők (prioritás szerint)
 
-0. [ ] **Elérhetőség tárolása és frissítése** (a felhasználó kérdése nyomán): `playable`, az ablakok (első/utolsó/következő), `last_seen_at`; egy `m3 ingest recheck` feladat, ami költségkerettel újraellenőrzi a tárolt azonosítókat (a leíró mezőket nem írja felül, csak az elérhetőségi oszlopokat), és a felület „most elérhető" jelzést/szűrőt mutat. Ha az `item?id=` egyszer `null`-t ad egy tárolt azonosítóra: `gone_at`.
+0. [x] ~~Elérhetőség tárolása és frissítése~~ **kész** (2026-11-06). Nyitva: a `recheck` élesben nincs kipróbálva a valós M3-mal (szándékosan, a kérések kímélése miatt); a következő lejátszható ablak nincs külön kezelve; az `availability_log` a felületen nem látszik.
 0. [ ] **Kereső UI**: részletes (mezőnkénti) szűrés és gépelés közbeni azonnali találatok: lásd a felhasználói kérdésekre adott válasz (2026-11-05); az azonnali keresés **JS-t** és `script-src 'self'` CSP-bővítést igényel, ezért a felhasználó dönt.
 1. [ ] **S15/S17**: image-szkennelés (trivy/grype), OWASP ZAP baseline a futó konténeren (nincs telepítve a gépen).
 3. [ ] **Quadlet élesben**: a generátor hibátlan, de az egységeket **nem indítottuk el** (cloudflared token kell). Digestre rögzíteni a cloudflared image-et.
@@ -147,6 +149,7 @@ Minden környezeti változóból ([internal/config/config.go](internal/config/co
 | Dátum | Session | Mi történt |
 |---|---|---|
 | 2026-11-05 | #1 | PHP feltérképezése, javítása és lezárása (`master`), Go-s terv és kísérlet (`docs/`). |
+| 2026-11-06 | #1 | **Elérhetőség** (séma v2, migráció, `RecordAvailability`, `availability_log`, jelvény + szűrő + "M3 oldal" link), **kemény kérés-plafon**, alapból kikapcsolt kis keretű `recheck`. Hibák, amiket a tesztek kaptak el: `playable: null` ismertnek számított; a fixture-ben nem volt `false` elem. Valós migráció + napi futás: 220 kérés. |
 | 2026-11-05 | #1 | A kereső ikon és szöveg közti távolság javítva (az MDC 24 px-es ikondobozt vár; az én 27+16 px-es felülírásom átfedést okozott). Elérhetőség vizsgálata: az azonosító évekig lekérdezhető, a lejátszhatóság időablakos (lásd 3. fejezet). |
 | 2026-11-05 | #1 | Lezárás: fuzzerek (3×25 mp, hibátlan), S14 CSP valódi böngészőben (0 sértés, pozitív kontrollal), képernyőkép-ellenőrzés, valós adaton mért keresési késleltetés (p95 2,7 ms). |
-| 2026-11-05 | #1 | **A Go program megépítése**: config, upstream kliens (böngésző UA, **http/https proxy**), képek, store (atomi publikálás, authorizer), ingest, web, Containerfile, Quadlet, e2e. Valós weekly: 962 műsor, 0 hiba. Tesztek: `go test -race` zöld, e2e 48/48, govulncheck tiszta. PHP eltávolítva az ágról. |
+| 2026-11-05 | #1 | **A Go program megépítése**: config, upstream kliens (böngésző UA, **http/https proxy**), képek, store (atomi publikálás, authorizer), ingest, web, Containerfile, Quadlet, e2e. Valós weekly: 962 műsor, 0 hiba. Tesztek: `go test -race` zöld, e2e 51/51, govulncheck tiszta. PHP eltávolítva az ágról. |

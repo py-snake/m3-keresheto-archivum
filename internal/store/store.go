@@ -23,7 +23,7 @@ import (
 var schemaSQL string
 
 // SchemaVersion is stored in PRAGMA user_version.
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 // DBFile is the name of the published database inside the data directory.
 const DBFile = "m3.sqlite"

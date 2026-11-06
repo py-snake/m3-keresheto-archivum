@@ -36,4 +36,13 @@ type Program struct {
 	AddedAt          int64 // unix seconds (UTC), set by the store
 	ReleasedAt       int64 // unix seconds (UTC), 0 = unknown
 	ImageState       int
+
+	// Availability: the LAST OBSERVED state, unlike the descriptive fields (first seen).
+	PlayableKnown     bool  // false = never observed
+	Playable          bool  // meaningful only when PlayableKnown
+	PlayableCheckedAt int64 // unix seconds: when the value was last observed (0 = never)
+	PlayableChangedAt int64 // unix seconds: when the value last changed
+	WindowFirst       int64 // earliest / latest date of the upstream's playable dates (0 = none)
+	WindowLast        int64
+	GoneAt            int64 // unix seconds: the upstream stopped knowing this program (0 = still known)
 }

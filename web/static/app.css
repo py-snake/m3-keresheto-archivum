@@ -157,3 +157,32 @@ details[open] summary {
 .paginator__wrapper a {
 	text-decoration: none;
 }
+
+/* availability badge and the link to the program's page on the M3 site */
+.avail-row {
+	margin-top: 6px;
+	font-size: 0.8rem;
+}
+
+.avail {
+	display: inline-block;
+	padding: 1px 8px;
+	margin-right: 6px;
+	border-radius: 10px;
+	border: 1px solid currentColor;
+	cursor: help;
+}
+
+.avail--yes { color: #6fcf7f; }
+.avail--no { color: #e57373; }
+.avail--gone { color: #b39ddb; }
+.avail--unknown { color: #9e9e9e; }
+
+.m3link { color: #9ecbff; text-decoration: none; }
+
+.only-playable {
+	display: inline-block;
+	margin-left: 12px;
+	color: var(--mdc-theme-text-primary-on-dark);
+	vertical-align: middle;
+}

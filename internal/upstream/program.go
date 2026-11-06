@@ -76,6 +76,8 @@ func ParseProgram(raw []byte) (Program, bool, error) {
 		Episodes:         jsonInt(f["episodes"], 0, 100000),
 		ReleasedAt:       earliest(f["start_playable_dts"], f["start_startTime_dts"]),
 	}
+	p.WindowFirst, p.WindowLast = bounds(f["start_playable_dts"])
+	p.PlayableKnown, p.Playable = jsonStrictBool(f["playable"])
 
 	if !progid.Valid(p.ProgramID) {
 		return Program{}, false, fmt.Errorf("%w: malformed program id", ErrInvalidItem)
@@ -212,6 +214,41 @@ func jsonBool(raw json.RawMessage) bool {
 		return x == "1" || strings.EqualFold(x, "true")
 	}
 	return false
+}
+
+// jsonStrictBool reports whether the value is a real JSON boolean, and its value.
+func jsonStrictBool(raw json.RawMessage) (known, value bool) {
+	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "null" {
+		return false, false // json.Unmarshal would turn null into a silent false
+	}
+	var b bool
+	if json.Unmarshal(raw, &b) != nil {
+		return false, false
+	}
+	return true, b
+}
+
+// bounds returns the earliest and the latest valid RFC 3339 timestamp (unix seconds) of a JSON
+// string array, or 0, 0.
+func bounds(raw json.RawMessage) (first, last int64) {
+	var dts []string
+	if len(raw) == 0 || json.Unmarshal(raw, &dts) != nil {
+		return 0, 0
+	}
+	for _, s := range dts {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil || t.Unix() <= 0 {
+			continue
+		}
+		u := t.Unix()
+		if first == 0 || u < first {
+			first = u
+		}
+		if u > last {
+			last = u
+		}
+	}
+	return first, last
 }
 
 // earliest returns the smallest valid RFC 3339 timestamp (unix seconds) found in the given

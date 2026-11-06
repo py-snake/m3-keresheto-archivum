@@ -37,11 +37,28 @@ Ezután: <http://127.0.0.1:8080>
 | `m3 ingest daily` | a mai műsorlista és a (kb. 8 napos) műsorújság |
 | `m3 ingest weekly` | a nyitott archívum gyűjteményei, a sorozatok minden része |
 | `m3 ingest images` | csak a hiányzó borítóképek letöltése |
+| `m3 ingest recheck` | a legrégebben ellenőrzött műsorok elérhetőségének újralekérdezése. **Alapból ki van kapcsolva**, lásd az Elérhetőség fejezetet |
+| `m3 ingest migrate` | az adatbázis-séma frissítése (nem küld kérést az M3 felé; bármelyik gyűjtés is elvégzi) |
 | `m3 ingest item M3-… [M3-…]` | adott műsorok felvétele azonosító alapján (rendszergazdai eszköz) |
 | `m3 healthcheck [url]` | 0-val lép ki, ha a szerver válaszol |
 | `m3 version` | verzió |
 
 Kérésre felvétel a weben **nincs**: a webes oldalról semmi nem ír az adatbázisba.
+
+## Elérhetőség: játszható-e egy műsor
+
+Az M3 minden műsorhoz jelzi, hogy az adott pillanatban lejátszható-e (`playable`), és megadja a lejátszható napokat is. Ez **időablakos és változik**: ugyanaz a műsor lejárhat, majd egy későbbi ablakban újra elérhető lehet. A műsor azonosítójával a metaadat évekig lekérdezhető maradt, a lejátszás viszont ablakhoz kötött (és DRM-védett).
+
+* A program az **utolsó megfigyelt** elérhetőséget tárolja, mellé az ellenőrzés időpontját és az utolsó változás idejét. A leíró adatok (cím, leírás…) továbbra is az **első látott** állapotot őrzik.
+* A felületen jelvény mutatja: **Elérhető** / **Nem elérhető** / **Ismeretlen** (még nem ellenőriztük) / **Eltűnt az M3-ról** (az adatai itt megmaradnak). A jelvény fölé víve látszik, mikor ellenőriztük utoljára: az érték azóta változhatott. A „Csak a most elérhetők" jelölőnégyzet szűr rá, az „M3 oldal ↗" link a műsor saját oldalára visz (a nem elérhető műsor oldala is betölt, de lejátszó helyett „jelenleg nem elérhető" üzenetet mutat).
+* **Az elérhetőség ingyen frissül**: a napi műsorlista és a műsorújság elemei, valamint az újonnan felvett műsorok lekérdezése amúgy is tartalmazza a jelzőt, ezekből nem megy ki extra kérés.
+* A változásokról az `availability_log` tábla vezet előzményt (csak változáskor kerül bele sor), így látszik, mikor volt utoljára elérhető egy műsor.
+
+**Az M3 oldalának kímélése.** A program szándékosan nem „botol":
+* Minden gyűjtő folyamatnak **kemény kérés-plafonja** van (`M3_MAX_REQUESTS`); eléréskor megáll.
+* Kérések között mindig van szünet (`M3_REQUEST_DELAY_MS`), a képek és a műsorok lekérdezése is költségkerettel történik.
+* Az **`ingest recheck` alapból ki van kapcsolva**. Ha mégis kell, kis számmal kapcsold be, pl. `M3_RECHECK_PER_RUN=30` (naponta 30 kérés, 3 másodperces szünettel). A legrégebben ellenőrzött műsorokkal kezd, az eltűnteket nem kérdezi újra.
+* A megfigyelés nélküli (`Ismeretlen`) műsorok addig azok maradnak, amíg a napi lista vagy a `recheck` nem érinti őket.
 
 ## Az adatkönyvtár (`M3_DATA_DIR`, alapból `/data`)
 
@@ -68,6 +85,9 @@ backups/m3-ÉÉÉÉHHNN-….sqlite   a korábbi adatbázisok (alapból 14 db, ke
 | `M3_IMAGE_MAX_WIDTH` | a borítóképek átméretezése (px, 0 = eredeti) | `480` |
 | `M3_BACKUPS_KEPT` | megőrzött korábbi adatbázisok | `14` |
 | `M3_REQUEST_DELAY_MS` | szünet két kimenő kérés között | `250` |
+| `M3_MAX_REQUESTS` | **kemény plafon**: legfeljebb ennyi kérést küld egy gyűjtő folyamat az M3 felé, utána leáll és a többit a következő futásra hagyja | `2000` |
+| `M3_RECHECK_PER_RUN` | az `ingest recheck` futásonként ennyi műsort kérdez le újra (`0` = kikapcsolva, legfeljebb `500`) | `0` |
+| `M3_RECHECK_DELAY_MS` | szünet két újraellenőrző kérés között (legalább `500`) | `3000` |
 | `UPSTREAM_USER_AGENT` | a kimenő kérések User-Agentje | valódi böngésző (Chrome) |
 | `UPSTREAM_PROXY` | minden kimenő forgalom ezen a proxyn megy át | nincs |
 | `UPSTREAM_PROXY_INSECURE` | a **proxy** TLS-tanúsítványát nem ellenőrzi | kikapcsolva |

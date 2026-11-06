@@ -153,8 +153,9 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	_, raw := q["nyers"]
 	term, valid := store.NormalizeTerm(q.Get("kereses"))
+	onlyPlayable := q.Get("elerheto") == "1"
 
-	data := pageData{Title: siteTitle, Search: term, Raw: raw, Today: s.now()}
+	data := pageData{Title: siteTitle, Search: term, Raw: raw, OnlyPlayable: onlyPlayable, Today: s.now()}
 	status := http.StatusOK
 
 	switch reader := s.o.Source.Reader(); {
@@ -167,7 +168,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	default:
 		ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
 		defer cancel()
-		res, err := reader.Search(ctx, term, PageSize, (page-1)*PageSize)
+		res, err := reader.SearchQuery(ctx, store.Query{Term: term, OnlyPlayable: onlyPlayable, Limit: PageSize, Offset: (page - 1) * PageSize})
 		switch {
 		case errors.Is(err, store.ErrTermTooShort):
 			data.Notice = "Legalább " + strconv.Itoa(store.MinTermRunes) + " karakter szükséges a kereséshez."
@@ -180,7 +181,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			return
 		default:
 			data.Items, data.Total, data.Capped = res.Items, res.Total, res.Capped
-			data.Pager = buildPager(page, res.Total, term, raw)
+			data.Pager = buildPager(page, res.Total, term, raw, onlyPlayable)
 			if term != "" {
 				data.Title = term + " - " + siteTitle
 			}

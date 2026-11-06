@@ -20,7 +20,7 @@ type Writer struct {
 
 func newWriter(db *sql.DB, now func() time.Time) *Writer { return &Writer{db: db, now: now} }
 
-// initSchema creates the schema in an empty database, or verifies an existing one.
+// initSchema creates the schema in an empty database, upgrades an older one, or verifies a current one.
 func initSchema(ctx context.Context, db *sql.DB) error {
 	var version int
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
@@ -30,16 +30,21 @@ func initSchema(ctx context.Context, db *sql.DB) error {
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master").Scan(&tables); err != nil {
 		return err
 	}
-	switch {
-	case tables == 0 && version == 0:
+	if tables == 0 && version == 0 {
 		if _, err := db.ExecContext(ctx, schemaSQL); err != nil {
 			return fmt.Errorf("creating schema: %w", err)
 		}
 		return nil
-	case version == SchemaVersion:
-		return nil
 	}
-	return fmt.Errorf("unsupported database schema version %d", version)
+	if version < 1 || version > SchemaVersion {
+		return fmt.Errorf("unsupported database schema version %d", version)
+	}
+	for ; version < SchemaVersion; version++ {
+		if _, err := db.ExecContext(ctx, migrations[version-1]); err != nil {
+			return fmt.Errorf("migrating the schema from version %d: %w", version, err)
+		}
+	}
+	return nil
 }
 
 // InsertPrograms stores new programs; ones whose program_id exists are left untouched
@@ -80,6 +85,116 @@ func (w *Writer) InsertPrograms(ctx context.Context, ps []model.Program) (int, e
 		inserted += int(n)
 	}
 	return inserted, tx.Commit()
+}
+
+// RecordAvailability stores the observed availability of programs. Unlike InsertPrograms it
+// UPDATES existing rows, but only the availability columns: the descriptive fields keep the
+// first seen state. A change of the playable flag (or a first observation) is also appended to
+// availability_log. Programs whose item carried no playable flag are skipped. It returns how
+// many programs were observed and how many of them changed.
+func (w *Writer) RecordAvailability(ctx context.Context, ps []model.Program) (observed, changed int, err error) {
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after a commit
+
+	sel, err := tx.PrepareContext(ctx, "SELECT playable FROM programs WHERE program_id = ?")
+	if err != nil {
+		return 0, 0, err
+	}
+	defer sel.Close()
+	updChanged, err := tx.PrepareContext(ctx, `UPDATE programs SET playable = ?, playable_checked_at = ?,
+		playable_changed_at = ?, window_first = ?, window_last = ?, gone_at = 0 WHERE program_id = ?`)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer updChanged.Close()
+	updSame, err := tx.PrepareContext(ctx, `UPDATE programs SET playable_checked_at = ?, window_first = ?,
+		window_last = ?, gone_at = 0 WHERE program_id = ?`)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer updSame.Close()
+	logRow, err := tx.PrepareContext(ctx, "INSERT INTO availability_log (program_id, observed_at, playable) VALUES (?, ?, ?)")
+	if err != nil {
+		return 0, 0, err
+	}
+	defer logRow.Close()
+
+	now := w.now().Unix()
+	for _, p := range ps {
+		if !p.PlayableKnown || !progid.Valid(p.ProgramID) {
+			continue
+		}
+		var prev sql.NullInt64
+		if err := sel.QueryRowContext(ctx, p.ProgramID).Scan(&prev); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue // not stored (should not happen: insert comes first)
+			}
+			return 0, 0, err
+		}
+		observed++
+		val := boolInt(p.Playable)
+		if prev.Valid && prev.Int64 == int64(val) {
+			if _, err := updSame.ExecContext(ctx, now, p.WindowFirst, p.WindowLast, p.ProgramID); err != nil {
+				return 0, 0, err
+			}
+			continue
+		}
+		changed++
+		if _, err := updChanged.ExecContext(ctx, val, now, now, p.WindowFirst, p.WindowLast, p.ProgramID); err != nil {
+			return 0, 0, err
+		}
+		if _, err := logRow.ExecContext(ctx, p.ProgramID, now, val); err != nil {
+			return 0, 0, err
+		}
+	}
+	return observed, changed, tx.Commit()
+}
+
+// TouchChecked records that the given programs were checked just now, whether or not the upstream
+// answered with a playable flag.
+func (w *Writer) TouchChecked(ctx context.Context, ids []string) error {
+	now := w.now().Unix()
+	for _, id := range ids {
+		if !progid.Valid(id) {
+			continue
+		}
+		if _, err := w.db.ExecContext(ctx, "UPDATE programs SET playable_checked_at = ?, gone_at = 0 WHERE program_id = ?", now, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// MarkGone records that the upstream no longer knows a stored program. Its metadata stays.
+func (w *Writer) MarkGone(ctx context.Context, id string) error {
+	if !progid.Valid(id) {
+		return errors.New("malformed program id")
+	}
+	_, err := w.db.ExecContext(ctx, "UPDATE programs SET gone_at = ? WHERE program_id = ? AND gone_at = 0", w.now().Unix(), id)
+	return err
+}
+
+// StalestForRecheck returns up to limit program ids whose availability was observed longest ago
+// (never observed first), skipping programs the upstream no longer knows.
+func (w *Writer) StalestForRecheck(ctx context.Context, limit int) ([]string, error) {
+	rows, err := w.db.QueryContext(ctx,
+		"SELECT program_id FROM programs WHERE gone_at = 0 ORDER BY playable_checked_at ASC, id DESC LIMIT ?", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // MissingIDs returns those of the valid ids that are not stored yet, in the given order.

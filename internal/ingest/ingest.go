@@ -47,6 +47,10 @@ type Ingestor struct {
 	InvalidRatio float64
 	// MaxItems caps the item lookups of one weekly run. Default 3000.
 	MaxItems int
+	// RecheckPerRun is how many stored programs Recheck re-queries (0 = disabled).
+	RecheckPerRun int
+	// RecheckDelay is the pause between two recheck requests.
+	RecheckDelay time.Duration
 	// Now is the clock (tests).
 	Now func() time.Time
 }
@@ -60,6 +64,12 @@ type Result struct {
 	Images int
 	// Errors counts non-fatal problems (failed requests); the run still published what it got.
 	Errors int
+	// Observed / Changed count availability observations and how many changed the stored flag.
+	Observed, Changed int
+	// Rechecked / Gone count the programs Recheck re-queried and the ones the upstream no longer knows.
+	Rechecked, Gone int
+	// BudgetStopped is set when the request budget ended the work early (not an error).
+	BudgetStopped bool
 }
 
 func (g *Ingestor) publisher() *store.Publisher {
@@ -132,6 +142,9 @@ func (g *Ingestor) Weekly(ctx context.Context) (Result, error) {
 		var docs []upstream.CollectionDoc
 		for _, c := range colls {
 			list, err := g.Up.Collection(ctx, c)
+			if errors.Is(err, upstream.ErrBudget) {
+				return err
+			}
 			if err != nil {
 				res.Errors++
 				g.Log.Error("collection failed", "err", err)
@@ -153,6 +166,9 @@ func (g *Ingestor) Weekly(ctx context.Context) (Result, error) {
 				}
 				seenSeries[d.SeriesID] = true
 				sids, err := g.Up.SeriesProgramIDs(ctx, d.SeriesID)
+				if errors.Is(err, upstream.ErrBudget) {
+					return err
+				}
 				if err != nil {
 					res.Errors++
 					g.Log.Error("series failed", "err", err)
@@ -226,6 +242,9 @@ func (g *Ingestor) lookup(ctx context.Context, ids []string) ([]json.RawMessage,
 		}
 		raw, err := g.Up.Item(ctx, id)
 		switch {
+		case errors.Is(err, upstream.ErrBudget):
+			g.Log.Warn("request budget reached; the rest is left for the next run")
+			return out, errCount
 		case errors.Is(err, upstream.ErrNotFound):
 			g.Log.Info("the upstream has no such item", "program_id", id)
 		case err != nil:
@@ -249,8 +268,29 @@ func (g *Ingestor) store(ctx context.Context, w *store.Writer, source string, it
 		return err
 	}
 	res.New += n
-	g.Log.Info("stored", "source", source, "parsed", len(progs), "new", n)
+	obs, chg, err := w.RecordAvailability(ctx, dedupeLast(progs))
+	if err != nil {
+		return err
+	}
+	res.Observed += obs
+	res.Changed += chg
+	g.Log.Info("stored", "source", source, "parsed", len(progs), "new", n, "availability_observed", obs, "availability_changed", chg)
 	return g.fetchImages(ctx, w, res)
+}
+
+// dedupeLast keeps the last occurrence of every program (the most recent observation wins).
+func dedupeLast(ps []model.Program) []model.Program {
+	last := make(map[string]int, len(ps))
+	for i, p := range ps {
+		last[p.ProgramID] = i
+	}
+	out := make([]model.Program, 0, len(last))
+	for i, p := range ps {
+		if last[p.ProgramID] == i {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func dedupe(ps []model.Program) []model.Program {
@@ -281,6 +321,11 @@ func (g *Ingestor) fetchImages(ctx context.Context, w *store.Writer, res *Result
 			return ctx.Err()
 		}
 		data, err := g.Up.Image(ctx, id)
+		if errors.Is(err, upstream.ErrBudget) {
+			g.Log.Warn("request budget reached; the remaining images are left for the next run")
+			res.BudgetStopped = true
+			return nil
+		}
 		if err != nil {
 			res.Errors++
 			streak++
@@ -323,9 +368,93 @@ func (g *Ingestor) finish(res Result, err error) error {
 		return err
 	}
 	g.Log.Info("run finished", "published", res.Summary.Published, "programs_before", res.Summary.Before,
-		"programs_after", res.Summary.After, "new", res.New, "images", res.Images, "errors", res.Errors)
+		"programs_after", res.Summary.After, "new", res.New, "images", res.Images, "errors", res.Errors,
+		"availability_observed", res.Observed, "availability_changed", res.Changed, "requests", g.Up.Requests())
 	if res.Errors > 0 {
 		return fmt.Errorf("finished with %d non-fatal error(s); see the log", res.Errors)
 	}
 	return nil
+}
+
+// Migrate upgrades the database schema to the current version and publishes it. It sends no
+// request to the upstream. Running any ingest job does the same; this is the explicit form.
+func (g *Ingestor) Migrate(ctx context.Context) (Result, error) {
+	var res Result
+	sum, err := g.publisher().Run(ctx, func(context.Context, *store.Writer) error { return nil })
+	res.Summary = sum
+	return res, g.finish(res, err)
+}
+
+// Recheck re-queries the availability of the stored programs whose last observation is the oldest.
+//
+// It is the only job that sends requests *only* to refresh data, so it is deliberately gentle:
+// it does nothing unless RecheckPerRun is set, it sends at most that many requests, with a long
+// pause between them, and it stops at the request budget.
+func (g *Ingestor) Recheck(ctx context.Context) (Result, error) {
+	var res Result
+	if g.RecheckPerRun <= 0 {
+		g.Log.Warn("recheck is disabled: set M3_RECHECK_PER_RUN (a small number such as 30) to enable it. " +
+			"Availability is refreshed anyway by the requests of the daily and weekly jobs")
+		return res, nil
+	}
+	sum, err := g.publisher().Run(ctx, func(ctx context.Context, w *store.Writer) error {
+		ids, err := w.StalestForRecheck(ctx, g.RecheckPerRun)
+		if err != nil {
+			return err
+		}
+		var raws []json.RawMessage
+		var fetched []string
+	loop:
+		for i, id := range ids {
+			if i > 0 {
+				if err := sleep(ctx, g.RecheckDelay); err != nil {
+					return err
+				}
+			}
+			raw, err := g.Up.Item(ctx, id)
+			switch {
+			case errors.Is(err, upstream.ErrBudget):
+				g.Log.Warn("request budget reached; stopping the recheck")
+				res.BudgetStopped = true
+				break loop
+			case errors.Is(err, upstream.ErrNotFound):
+				res.Gone++
+				g.Log.Info("the upstream no longer knows this program", "program_id", id)
+				if err := w.MarkGone(ctx, id); err != nil {
+					return err
+				}
+			case err != nil:
+				res.Errors++
+				g.Log.Error("recheck failed", "program_id", id, "err", err)
+			default:
+				res.Rechecked++
+				raws = append(raws, raw)
+				fetched = append(fetched, id)
+			}
+		}
+		// an item without a playable flag must still count as checked, or it would be re-queried every run
+		if err := w.TouchChecked(ctx, fetched); err != nil {
+			return err
+		}
+		progs, rep := upstream.ParsePrograms(raws)
+		if err := g.breaker("recheck", rep); err != nil {
+			return err
+		}
+		res.Observed, res.Changed, err = w.RecordAvailability(ctx, dedupeLast(progs))
+		return err
+	})
+	res.Summary = sum
+	return res, g.finish(res, err)
+}
+
+// sleep waits for d or until ctx ends.
+func sleep(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }

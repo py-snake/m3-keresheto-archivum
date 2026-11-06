@@ -47,11 +47,12 @@ type pageData struct {
 	Raw    bool
 	Notice string
 
-	Items  []model.Program
-	Total  int
-	Capped bool
-	Pager  []pagerItem
-	Today  time.Time
+	OnlyPlayable bool
+	Items        []model.Program
+	Total        int
+	Capped       bool
+	Pager        []pagerItem
+	Today        time.Time
 }
 
 // parseTemplates compiles the embedded templates. Only html/template is used and nothing is
@@ -68,6 +69,7 @@ func parseTemplates() (*template.Template, error) {
 		"details":    details,
 		"rawColumns": func() []string { return rawColumns },
 		"rawRow":     rawRow,
+		"checked":    checkedLabel,
 	}).ParseFS(sub, "*.html")
 }
 
@@ -118,6 +120,7 @@ var rawColumns = []string{
 	"program_id", "title", "subtitle", "info", "extended_info", "short_description", "description", "company",
 	"year", "country", "creators", "contributors", "genre", "quality", "pg", "duration", "ratio",
 	"hasSubtitle", "isSeries", "seriesId", "episode", "episodes", "added", "released",
+	"playable", "playableChecked", "playableChanged", "windowFirst", "windowLast", "gone",
 }
 
 func fmtTime(unix int64) string {
@@ -133,7 +136,35 @@ func rawRow(p model.Program) []string {
 		strconv.Itoa(p.Year), p.Country, p.Creators, p.Contributors, p.Genre, p.Quality, p.PG, p.Duration, p.Ratio,
 		b2s(p.HasSubtitle), b2s(p.IsSeries), p.SeriesID, strconv.Itoa(p.Episode), strconv.Itoa(p.Episodes),
 		fmtTime(p.AddedAt), fmtTime(p.ReleasedAt),
+		playableText(p), fmtTime(p.PlayableCheckedAt), fmtTime(p.PlayableChangedAt),
+		fmtTime(p.WindowFirst), fmtTime(p.WindowLast), fmtTime(p.GoneAt),
 	}
+}
+
+// playableText is "" while the availability was never observed.
+func playableText(p model.Program) string {
+	switch {
+	case !p.PlayableKnown:
+		return ""
+	case p.Playable:
+		return "1"
+	}
+	return "0"
+}
+
+// checkedLabel explains how fresh the availability information is, for the badge tooltip.
+func checkedLabel(p model.Program) string {
+	if p.GoneAt > 0 {
+		return "Az M3 már nem ismeri ezt a műsort (" + fmtTime(p.GoneAt) + " óta). Az adatai itt megmaradtak."
+	}
+	if !p.PlayableKnown {
+		return ""
+	}
+	s := "Utoljára ellenőrizve: " + fmtTime(p.PlayableCheckedAt) + ". Az elérhetőség azóta változhatott."
+	if p.WindowLast > 0 {
+		s += " Utolsó ismert lejátszható nap: " + time.Unix(p.WindowLast, 0).In(budapest).Format("2006-01-02") + "."
+	}
+	return s
 }
 
 // details lists every non-empty field of a program, like the PHP version did.
@@ -156,7 +187,7 @@ func semi(s string) string {
 }
 
 // buildPager returns the page links around the current page. Links keep the search term.
-func buildPager(current, total int, search string, raw bool) []pagerItem {
+func buildPager(current, total int, search string, raw, onlyPlayable bool) []pagerItem {
 	pages := (total + PageSize - 1) / PageSize
 	pages = min(pages, MaxPage)
 	if pages <= 1 {
@@ -170,6 +201,9 @@ func buildPager(current, total int, search string, raw bool) []pagerItem {
 		path := "/"
 		if page > 1 {
 			path = "/" + strconv.Itoa(page)
+		}
+		if onlyPlayable {
+			q.Set("elerheto", "1")
 		}
 		s := q.Encode()
 		if raw {

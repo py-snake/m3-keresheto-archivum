@@ -37,6 +37,10 @@
 						{{if eq .ImageState 1}}<img src="/img/{{.ProgramID}}.jpg" alt="" loading="lazy">{{else}}<img src="/static/placeholder.svg" alt="" loading="lazy">{{end}}
 						{{with $d := futureDate . $.Today}}<div class="m3player-overlay" title="Közzététel dátuma">📅 {{$d}}</div>{{end}}
 					</div>
+					<div class="avail-row">
+						{{if .GoneAt}}<span class="avail avail--gone" title="{{checked .}}">Eltűnt az M3-ról</span>{{else if .PlayableKnown}}{{if .Playable}}<span class="avail avail--yes" title="{{checked .}}">Elérhető</span>{{else}}<span class="avail avail--no" title="{{checked .}}">Nem elérhető</span>{{end}}{{else}}<span class="avail avail--unknown" title="Az elérhetőséget még nem ellenőriztük.">Ismeretlen</span>{{end}}
+						<a class="m3link" href="https://nemzetiarchivum.hu/m3/{{.ProgramID}}" target="_blank" rel="noopener noreferrer">M3 oldal ↗</a>
+					</div>
 				</td>
 				<td class="mdc-data-table__cell cell__title">
 					<span class="mdc-typography--headline6 cell__title--title">{{.Title}}</span>

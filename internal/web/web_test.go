@@ -51,6 +51,16 @@ func newEnv(t *testing.T, tune func(*Options), ps ...model.Program) *env {
 					}
 				}
 			}
+			if _, _, err := w.RecordAvailability(ctx, ps); err != nil {
+				return err
+			}
+			for _, p := range ps {
+				if p.GoneAt > 0 {
+					if err := w.MarkGone(ctx, p.ProgramID); err != nil {
+						return err
+					}
+				}
+			}
 			return nil
 		}); err != nil {
 			t.Fatal(err)
@@ -164,9 +174,15 @@ func TestIndexRendersTheArchive(t *testing.T) {
 		}
 	}
 	// no JavaScript and no third-party resources at all
-	for _, bad := range []string{"<script", "googleapis", "unpkg", "nemzetiarchivum.hu"} {
+	for _, bad := range []string{"<script", "googleapis", "unpkg"} {
 		if strings.Contains(body, bad) {
 			t.Errorf("page contains %q", bad)
+		}
+	}
+	// nothing is loaded from another host: only plain links lead there (the M3 page of a program)
+	for _, bad := range []string{`src="http`, `src='http`, `<link rel="stylesheet" href="http`, `url(http`} {
+		if strings.Contains(body, bad) {
+			t.Errorf("the page loads an external resource: %q", bad)
 		}
 	}
 	// newest first
@@ -546,7 +562,7 @@ func TestLogsHoldNeitherSearchTermsNorRawAddresses(t *testing.T) {
 }
 
 func TestPagerWindow(t *testing.T) {
-	items := buildPager(10, 1000, `a b&c`, true)
+	items := buildPager(10, 1000, `a b&c`, true, false)
 	var labels []string
 	for _, it := range items {
 		labels = append(labels, it.Label)
@@ -558,10 +574,10 @@ func TestPagerWindow(t *testing.T) {
 	if items[1].Href != "/9?kereses=a+b%26c&nyers" {
 		t.Fatalf("href: %s", items[1].Href)
 	}
-	if buildPager(1, 5, "", false) != nil {
+	if buildPager(1, 5, "", false, false) != nil {
 		t.Fatal("a single page needs no pager")
 	}
-	if p := buildPager(1, 50*1000, "", false); len(p) == 0 || p[len(p)-1].Href != "/1000" {
+	if p := buildPager(1, 50*1000, "", false, false); len(p) == 0 || p[len(p)-1].Href != "/1000" {
 		t.Fatalf("pager must stop at MaxPage: %+v", p[len(p)-1])
 	}
 }
@@ -679,6 +695,82 @@ func TestOversizedHeadersAreRefused(t *testing.T) {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusRequestHeaderFieldsTooLarge {
 			t.Fatalf("20 kB header accepted: %d", resp.StatusCode)
+		}
+	}
+}
+
+func TestAvailabilityBadgesLinkAndFilter(t *testing.T) {
+	yes := prog("M3-YES1", "Elérhető film")
+	yes.PlayableKnown, yes.Playable = true, true
+	yes.WindowLast = time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC).Unix()
+	no := prog("M3-NO01", "Lejárt film")
+	no.PlayableKnown, no.Playable = true, false
+	unknown := prog("M3-UNK1", "Ismeretlen film")
+	gone := prog("M3-GONE1", "Eltűnt film")
+	gone.PlayableKnown, gone.Playable, gone.GoneAt = true, false, 1
+	e := newEnv(t, nil, yes, no, unknown, gone)
+
+	resp, body := e.get(t, "/?kereses=film")
+	assertSecure(t, "availability page", resp)
+	for _, want := range []string{
+		`avail--yes" title="Utoljára ellenőrizve`, ">Elérhető<", ">Nem elérhető<", ">Ismeretlen<", ">Eltűnt az M3-ról<",
+		"Utolsó ismert lejátszható nap: 2026-11-14", "Az elérhetőség azóta változhatott",
+		`href="https://nemzetiarchivum.hu/m3/M3-YES1" target="_blank" rel="noopener noreferrer"`,
+		`name="elerheto"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "elerheto\" value=\"1\" checked") {
+		t.Error("the filter box is checked without the filter")
+	}
+
+	// the filter keeps only programs whose last observed state is playable
+	_, body = e.get(t, "/?kereses=film&elerheto=1")
+	if !strings.Contains(body, "1 találat") || !strings.Contains(body, "Elérhető film") || strings.Contains(body, "Lejárt film") || strings.Contains(body, "Ismeretlen film") {
+		t.Error("the playable filter does not filter")
+	}
+	if !strings.Contains(body, "checked") {
+		t.Error("the filter box lost its state")
+	}
+	// ... also without a search term, and with an id lookup
+	_, body = e.get(t, "/?elerheto=1")
+	if !strings.Contains(body, "1 találat") {
+		t.Error("filter without a term")
+	}
+	_, body = e.get(t, "/?kereses=M3-NO01&elerheto=1")
+	if !strings.Contains(body, "Nincs találat") {
+		t.Error("an id lookup must respect the filter")
+	}
+}
+
+func TestPagerKeepsTheAvailabilityFilter(t *testing.T) {
+	var ps []model.Program
+	for i := 0; i < 25; i++ {
+		p := prog(fmt.Sprintf("M3-P%03d", i), fmt.Sprintf("Film %03d", i))
+		p.PlayableKnown, p.Playable = true, true
+		ps = append(ps, p)
+	}
+	e := newEnv(t, nil, ps...)
+	_, body := e.get(t, "/?kereses=Film&elerheto=1")
+	if !strings.Contains(body, `href="/2?elerheto=1&amp;kereses=Film"`) && !strings.Contains(body, `href="/2?kereses=Film&amp;elerheto=1"`) {
+		t.Errorf("pager links drop the filter")
+	}
+	if items := buildPager(1, 30, "x", false, true); !strings.Contains(items[1].Href, "elerheto=1") {
+		t.Errorf("%+v", items)
+	}
+}
+
+func TestDetailsShowAvailability(t *testing.T) {
+	p := prog("M3-DET1", "Részletes")
+	p.PlayableKnown, p.Playable = true, false
+	p.PlayableCheckedAt = time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC).Unix()
+	e := newEnv(t, nil, p)
+	_, body := e.get(t, "/")
+	for _, key := range []string{">playable<", ">playableChecked<"} {
+		if !strings.Contains(body, key) {
+			t.Errorf("details lack %s", key)
 		}
 	}
 }

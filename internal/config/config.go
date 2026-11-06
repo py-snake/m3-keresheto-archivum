@@ -50,6 +50,13 @@ type Config struct {
 	ImageMaxWidth int
 	// BackupsKept is the number of rotated database backups.
 	BackupsKept int
+	// MaxRequests is the hard ceiling of upstream requests per ingest process.
+	MaxRequests int
+	// RecheckPerRun is how many stored programs `ingest recheck` re-queries per run. 0 = disabled
+	// (the default): availability is then only refreshed by requests the other jobs send anyway.
+	RecheckPerRun int
+	// RecheckDelay is the pause between two recheck requests.
+	RecheckDelay time.Duration
 }
 
 // FromEnv builds a Config from getenv (usually os.Getenv).
@@ -66,6 +73,9 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 		ImagesPerRun:      300,
 		ImageMaxWidth:     480,
 		BackupsKept:       14,
+		MaxRequests:       2000,
+		RecheckPerRun:     0,
+		RecheckDelay:      3 * time.Second,
 	}
 
 	var err error
@@ -105,6 +115,19 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 	}
 	if c.BackupsKept, err = integer(getenv("M3_BACKUPS_KEPT"), c.BackupsKept, 0, 1000); err != nil {
 		return nil, fmt.Errorf("M3_BACKUPS_KEPT: %w", err)
+	}
+	if c.MaxRequests, err = integer(getenv("M3_MAX_REQUESTS"), c.MaxRequests, 10, 100000); err != nil {
+		return nil, fmt.Errorf("M3_MAX_REQUESTS: %w", err)
+	}
+	if c.RecheckPerRun, err = integer(getenv("M3_RECHECK_PER_RUN"), c.RecheckPerRun, 0, 500); err != nil {
+		return nil, fmt.Errorf("M3_RECHECK_PER_RUN: %w", err)
+	}
+	if v := getenv("M3_RECHECK_DELAY_MS"); v != "" {
+		ms, err := integer(v, 0, 500, 600000)
+		if err != nil {
+			return nil, fmt.Errorf("M3_RECHECK_DELAY_MS: %w", err)
+		}
+		c.RecheckDelay = time.Duration(ms) * time.Millisecond
 	}
 	if v := getenv("M3_REQUEST_DELAY_MS"); v != "" {
 		ms, err := integer(v, 0, 0, 60000)

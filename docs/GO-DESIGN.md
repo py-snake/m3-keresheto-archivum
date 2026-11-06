@@ -356,7 +356,7 @@ docs/GO-DESIGN.md  docs/spikes/
 
 ## 18. Megvalósítási állapot és eltérések a tervtől
 
-**Kész és tesztelt (2026-11-05):** a teljes program (`cmd/m3`, `internal/*`, `web/`), `Containerfile`, `deploy/quadlet/`, `tests/e2e/`. Tesztek: `go vet`, `go test -race ./...`, 3 fuzzer (hibátlan), `govulncheck` (tiszta), `tests/e2e/run.sh` **48/48** valós M3 oldallal. A biztonsági kritériumok (13. fejezet) állapota a [CLAUDE.md 6. fejezetében](../CLAUDE.md).
+**Kész és tesztelt (2026-11-05):** a teljes program (`cmd/m3`, `internal/*`, `web/`), `Containerfile`, `deploy/quadlet/`, `tests/e2e/`. Tesztek: `go vet`, `go test -race ./...`, 3 fuzzer (hibátlan), `govulncheck` (tiszta), `tests/e2e/run.sh` **51/51** valós M3 oldallal. A biztonsági kritériumok (13. fejezet) állapota a [CLAUDE.md 6. fejezetében](../CLAUDE.md).
 
 **Kimenő proxy-támogatás (a felhasználó kérése, a tervben nem szerepelt):** `UPSTREAM_PROXY` (http:// vagy https:// `CONNECT`-proxy, opcionális `user:password@`), `UPSTREAM_PROXY_INSECURE` (csak a *proxy* TLS-tanúsítványát nem ellenőrzi; a céloldalét soha), `UPSTREAM_CA_FILE`. A céloldal nevét a proxy oldja fel; környezeti `HTTP(S)_PROXY`-t nem használunk; proxy-hibánál nincs visszaesés közvetlen kapcsolatra; a jelszó nem kerül naplóba. Bizonyítás: a gyűjtő egy `--internal` podman hálózaton fut (nincs útja az internetre), és csak a proxyn át működik; a proxyk naplója szerint kizárólag `nemzetiarchivum.hu:443`-ra nyitottak alagutat.
 
@@ -377,5 +377,7 @@ docs/GO-DESIGN.md  docs/spikes/
 | keresési késleltetés (0. fázis kapu) | **valós adaton p95 = 2,7 ms**, max 4,7 ms | `internal/store/latency_test.go` |
 | CSP érvényesítése böngészőben (S14) | **igazolva**: headless Chromium, 0 sértés a valós oldalakon, pozitív kontrollal | |
 | Quadlet egységek „kipróbálandók" | a **generátor `--dryrun` hibátlanul elfogadja**; **élesben nem indítottuk** (cloudflared token nélkül) | |
+
+**Séma 2: elérhetőség (2026-11-06).** A leíró oszlopok "első látott", az elérhetőségiek "utolsó megfigyelt" értékek (`playable`, `playable_checked_at`, `playable_changed_at`, `window_first/last`, `gone_at`), plusz append-only `availability_log` (csak változáskor). A megfigyelés a napi/heti kérésekből ingyen jön; a külön `recheck` alapból ki van kapcsolva, és kemény kérés-plafon (`M3_MAX_REQUESTS`) védi az M3 oldalát. Az M3 oldalán mért tények: a műsor-azonosító évekig lekérdezhető, a lejátszhatóság időablakos és DRM-védett; a nem elérhető műsor oldala betölt, de nem játszik le.
 
 **Tanulságok (hibák, amiket a tesztek kaptak el):** az `INSERT OR IGNORE` a `CHECK`-hibákat is elnyelte volna (→ `ON CONFLICT (program_id) DO NOTHING`); az authorizernek a driver és az FTS5 belső `PRAGMA`-it szűken engedni kellett; a Go mux a `..` utakra 307-et ad, nem 404-et.

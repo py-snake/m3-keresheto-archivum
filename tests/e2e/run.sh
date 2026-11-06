@@ -113,7 +113,9 @@ check $? "direct ingest works where a route exists"
 
 echo "== 7. the web role: read-only root fs, read-only data, no capabilities, no outbound network"
 DATA="$WORK/tls-insecure"
-podman run -d --name m3web --network "$NET_INT" "${HARD[@]}" -v "$DATA:/data:ro,z" "$IMG" serve >/dev/null
+# the checks below send ~30 requests from one client in a burst: raise the rate limit for them
+# (the limiter itself is covered by the unit tests)
+podman run -d --name m3web --network "$NET_INT" "${HARD[@]}" -e M3_RATE_LIMIT=100 -e M3_RATE_BURST=500 -v "$DATA:/data:ro,z" "$IMG" serve >/dev/null
 sleep 2
 podman exec m3web /m3 healthcheck; check $? "healthcheck inside the hardened container"
 
@@ -133,6 +135,9 @@ s, h, b = req("GET", "/")
 t("GET / -> 200 html", s == 200 and h["content-type"].startswith("text/html"))
 t("the page lists programs", "találat" in b.decode())
 t("no script tag, no third party host", b"<script" not in b and b"googleapis" not in b and b"unpkg" not in b)
+t("every program links to its page on the M3 site", b"https://nemzetiarchivum.hu/m3/M3-" in b and b'rel="noopener noreferrer"' in b)
+t("an availability badge is shown (the daily run records the playable flag)", b"avail--" in b)
+sf, _, bf = req("GET", "/?elerheto=1"); t("the 'only available' filter answers", sf == 200 and b"avail--no" not in bf)
 for hd in ["content-security-policy","x-content-type-options","referrer-policy","strict-transport-security","x-frame-options","cross-origin-opener-policy"]:
     t("header " + hd, hd in h)
 t("no cookies", "set-cookie" not in h)
@@ -150,7 +155,7 @@ for meth in ["POST", "PUT", "DELETE", "PATCH"]:
 s, _, b = req("GET", "/?kereses=%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E")
 t("a hostile search term is escaped", b"<script>alert" not in b)
 s, _, b = req("GET", "/?kereses=ab"); t("short term gets a notice", "Legalább 3" in b.decode())
-s, _, _ = req("GET", "/static/app.css"); t("static css", s == 200)
+s, _, _ = req("GET", "/static/app.css"); t("static css (status %d)" % s, s == 200)
 sys.exit(1 if fails else 0)
 PY
 podman run --rm --network "$NET_INT" -v "$WORK/check.py:/check.py:ro,z" "$CLIENT_IMG" python3 /check.py | tee "$WORK/web.out"

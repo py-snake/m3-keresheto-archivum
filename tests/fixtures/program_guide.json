@@ -537,237 +537,234 @@
     "startTime_dt": "2026-11-06T00:00:14Z"
    },
    {
-    "id": "M3-59950997639998359",
+    "id": "M3-87750998679999559",
     "start_startTime_dts": [
-     "2022-05-19T16:25:29Z",
-     "2022-05-20T00:25:29Z",
-     "2022-05-20T08:25:29Z",
-     "2026-11-05T16:26:41Z",
-     "2026-11-06T00:26:41Z",
-     "2026-11-06T08:26:41Z"
+     "2026-11-05T22:51:45Z",
+     "2026-11-06T06:51:44Z",
+     "2026-11-06T14:52:02Z"
+    ],
+    "start_durationTC_str": [
+     "00:15:00:24"
+    ],
+    "url": "M3-Wm43U3JhWlZ0MjRzeE9FSWtxeEtBekJQUmJ3YkZSZzRzdmNaNmoxSWpwRT0",
+    "info": [
+     "Rendező: Apró Attila",
+     "Operatőr: Gyulai Gaál Krisztián",
+     "Szerkesztő: Sárosi Bálint"
+    ],
+    "extended_info": [
+     "Rendező: Apró Attila",
+     "Operatőr: Gyulai Gaál Krisztián",
+     "Szerkesztő: Sárosi Bálint",
+     "Munkatárs: Bauer Éva",
+     "Munkatárs: Megyesi Sándor",
+     "Gyártásvezető: Szeles Péter",
+     "Munkatárs: Zádor István"
+    ],
+    "title": "Nótaszó a Tanne Étteremből",
+    "subtitle": "Vendég: Madarász Katalin",
+    "description": "A Magyar Televízió 1992-ben rögzített felvételén Madarász Katalin énekel, ifj. Duka Elemér és zenekara muzsikál.",
+    "short_description": "A Magyar Televízió 1992-ben rögzített felvételén Madarász Katalin énekel, ifj. Duka Elemér és zenekara muzsikál.",
+    "company": "Magyar Televízió Nonprofit Zrt.",
+    "year": "1992",
+    "country": "HUN",
+    "creators": [
+     "Apró Attila (Rendező)",
+     "Gyulai Gaál Krisztián (Operatőr)",
+     "Sárosi Bálint (Szerkesztő)",
+     "Bauer Éva (Munkatárs)",
+     "Megyesi Sándor (Munkatárs)",
+     "Szeles Péter (Gyártásvezető)",
+     "Zádor István (Munkatárs)"
+    ],
+    "contributors": [
+     ""
+    ],
+    "genre": [
+     "Cigányzene, nóta"
+    ],
+    "collection": [],
+    "quality": "SD",
+    "pg": "No PG",
+    "duration": "00:15:00:24",
+    "ratio": "4:3",
+    "hasSubtitle": true,
+    "isSeries": true,
+    "isHighlighted_b": null,
+    "isBroadcastCatchup_b": null,
+    "seriesId": "TsOzdGFzesOzIGEgVGFubmUgw4l0dGVyZW1ixZFs",
+    "collectionId": null,
+    "episode": 1,
+    "episodes": "2",
+    "rank": null,
+    "playable": false,
+    "startTime_dt": "2026-11-05T22:51:45Z"
+   },
+   {
+    "id": "M3-87778989270999891",
+    "start_startTime_dts": [
+     "2023-07-04T22:36:11Z",
+     "2023-07-05T06:35:46Z",
+     "2023-07-05T14:36:39Z",
+     "2026-11-05T23:07:00Z",
+     "2026-11-06T07:06:59Z",
+     "2026-11-06T15:07:17Z"
     ],
     "start_playable_dts": [
-     "2022-05-27T00:00:00Z",
-     "2022-06-02T00:00:00Z",
-     "2022-06-03T00:00:00Z",
-     "2022-06-09T00:00:00Z",
-     "2022-06-10T00:00:00Z",
-     "2022-06-16T00:00:00Z",
+     "2023-07-11T00:00:00Z",
+     "2023-07-05T00:00:00Z",
+     "2023-07-12T00:00:00Z",
+     "2023-07-17T00:00:00Z",
+     "2023-07-18T00:00:00Z",
+     "2023-07-19T00:00:00Z",
+     "2026-02-26T00:00:00Z",
      "2026-11-06T00:00:00Z"
     ],
     "start_durationTC_str": [
-     "00:25:00:02"
+     "00:27:57:00"
     ],
-    "url": "M3-azlaZnI0REJ2ZXF6ZlJNdmxYbXdEWXAwQ0JSdFhUZklEY2hDTzJrTFVicz0",
+    "url": "M3-czRuTHl1V0M3N2lQUWZWTTFHdmRXc2Jrang4Zkt1ZVRsN3hIL2t5aGoxQT0",
     "info": [
-     "Rendező: Szemes Katalin",
-     "Operatőr: Doncsó Sándor",
-     "Szerkesztő: Medvedt Yvette"
+     "Rendező: Jánosi Antal",
+     "Operatőr: Wonke Rezső",
+     "Forgatókönyvíró: Jánosi Antal",
+     "Szerkesztő: Jánosi Antal"
     ],
     "extended_info": [
-     "Rendező: Szemes Katalin",
-     "Operatőr: Doncsó Sándor",
-     "Szerkesztő: Medvedt Yvette",
-     "Technikus: Bandur János",
-     "Gyártásvezető: Bossányi Károly",
-     "Hangmérnök: Bányai Gábor",
-     "Munkatárs: Fodor Krisztina",
-     "Vágó: Forgács Péter",
-     "Felvételvezető: Kocsis László Zoltán",
-     "Munkatárs: Nagy Balázs",
-     "Fővilágosító: Nyitrai István",
-     "Főszerkesztő: Szabó Edit",
-     "Rendezőasszisztens: Szemes Zsófia",
-     "Zenei Szerkesztő: Szigeti Ágnes",
-     "Világosító: Zsebök János"
+     "Rendező: Jánosi Antal",
+     "Operatőr: Wonke Rezső",
+     "Forgatókönyvíró: Jánosi Antal",
+     "Szerkesztő: Jánosi Antal",
+     "Munkatárs: Bende János",
+     "Zenei Szerkesztő: Darázs Erzsébet",
+     "Főgyártásvezető: Garaguly István",
+     "Segédoperatőr: Glósz Imre",
+     "Gyártásvezető: Hódossy Zoltán",
+     "Fővilágosító: Klemanovits Ágoston",
+     "Munkatárs: Kovács György",
+     "Szakértő: Kárpáti Tamás",
+     "Vágó: Mihály Éva",
+     "Munkatárs: Zelenka Péter"
     ],
-    "title": "Millenniumi mesék",
-    "subtitle": "Dr. Kol Erzsébet - Magányos hócsillag",
-    "description": "A múlt század elejére a megnövekedett népességszám gondolkodóba ejtette az élelmezésben jártasságot szerzett kutatókat, s a második világháborút követően nagy tartalékokat sejtettek a Föld algáinak és moszatjainak népes alfajaiban mint lehetséges táplálékforrás. Magyarországról Dr. Kol Erzsébet professzor foglakozott a hó- és jégalgák vizsgálatával, osztályozásával.",
-    "short_description": "A múlt század elejére a megnövekedett népességszám gondolkodóba ejtette az élelmezésben jártasságot szerzett kutatókat, s a második világháborút követően nagy tartalékokat sejtettek a Föld algáinak és moszatjainak népes alfajaiban mint lehetséges táplálékforrás. Magyarországról Dr. Kol Erzsébet professzor foglakozott a hó- és jégalgák vizsgálatával, osztályozásával.",
-    "company": "Ezüsthajó Produkció",
-    "year": "2002",
+    "title": "Magyarország 2000",
+    "subtitle": "\"Szállj, ragyogj, te mennyei fény...\" Gérecz Attilára emlékezünk",
+    "description": "Gérecz Attila a XX. század tragikus sorsú költője. Verseit mindössze két év alatt írta a váci börtönben. 1956. november 7-én hősi halált halt.\n",
+    "short_description": "Gérecz Attila a XX. század tragikus sorsú költője. Verseit mindössze két év alatt írta a váci börtönben. 1956. november 7-én hősi halált halt.\n",
+    "company": "Magyar Televízió Nonprofit Zrt.",
+    "year": "1999",
     "country": "HUN",
     "creators": [
-     "Szemes Katalin (Rendező)",
-     "Doncsó Sándor (Operatőr)",
-     "Medvedt Yvette (Szerkesztő)",
-     "Bandur János (Technikus)",
-     "Bossányi Károly (Gyártásvezető)",
-     "Bányai Gábor (Hangmérnök)",
-     "Fodor Krisztina (Munkatárs)",
-     "Forgács Péter (Vágó)",
-     "Kocsis László Zoltán (Felvételvezető)",
-     "Nagy Balázs (Munkatárs)",
-     "Nyitrai István (Fővilágosító)",
-     "Szabó Edit (Főszerkesztő)",
-     "Szemes Zsófia (Rendezőasszisztens)",
-     "Szigeti Ágnes (Zenei Szerkesztő)",
-     "Zsebök János (Világosító)"
+     "Jánosi Antal (Rendező)",
+     "Wonke Rezső (Operatőr)",
+     "Jánosi Antal (Forgatókönyvíró)",
+     "Jánosi Antal (Szerkesztő)",
+     "Bende János (Munkatárs)",
+     "Darázs Erzsébet (Zenei Szerkesztő)",
+     "Garaguly István (Főgyártásvezető)",
+     "Glósz Imre (Segédoperatőr)",
+     "Hódossy Zoltán (Gyártásvezető)",
+     "Klemanovits Ágoston (Fővilágosító)",
+     "Kovács György (Munkatárs)",
+     "Kárpáti Tamás (Szakértő)",
+     "Mihály Éva (Vágó)",
+     "Zelenka Péter (Munkatárs)"
     ],
     "contributors": [
-     "dr. Buczkó Krisztina (Műsor résztvevő)",
-     "dr. Felföldy Lajos (Műsor résztvevő)",
-     "dr. Gönzöl János (Műsor résztvevő)"
+     "Csernák János (Narrátor)",
+     "Papp Zoltán (Műsor résztvevő)",
+     "Tóth Bálint (Műsor résztvevő)",
+     "Vitay András (Narrátor)"
+    ],
+    "genre": [
+     "Tudományos ismeretterjesztő filmek"
+    ],
+    "collection": [],
+    "quality": "SD",
+    "pg": "12",
+    "duration": "00:27:57:00",
+    "ratio": "4:3",
+    "hasSubtitle": false,
+    "isSeries": true,
+    "isHighlighted_b": null,
+    "isBroadcastCatchup_b": null,
+    "seriesId": "TWFneWFyb3JzesOhZyAyMDAw",
+    "collectionId": null,
+    "episode": 43,
+    "episodes": "47",
+    "rank": null,
+    "playable": false,
+    "startTime_dt": "2026-11-05T23:07:00Z"
+   },
+   {
+    "id": "M3-87765969530999998",
+    "start_startTime_dts": [
+     "2022-11-05T23:35:03Z",
+     "2022-11-06T07:35:11Z",
+     "2026-11-05T23:35:07Z",
+     "2026-11-06T07:35:06Z",
+     "2026-11-06T15:35:24Z"
+    ],
+    "start_durationTC_str": [
+     "00:24:26:23"
+    ],
+    "url": "M3-VHdLU1Q3dE5Da090VFBYVS9rYTJoNHN3elR0OU9NZ2ZNVWNJSm9RMVJNMD0",
+    "info": [
+     "Rendező: nincs adat",
+     "Operatőr: Talán Csaba",
+     "Szerkesztő: Balogh Júlia"
+    ],
+    "extended_info": [
+     "Rendező: nincs adat",
+     "Operatőr: Talán Csaba",
+     "Szerkesztő: Balogh Júlia",
+     "Főszerkesztő: Balogh Júlia",
+     "Technikus: Bartos Bence",
+     "Gyártásvezető: Budai Attila",
+     "Segédoperatőr: Glósz Imre",
+     "Vágó: Jüsztl Zsófia",
+     "Felvételvezető: Kovács Imre"
+    ],
+    "title": "In memoriam Cziffra György",
+    "subtitle": false,
+    "description": "Dokumentumfilm Cziffra György Magyar Örökség-díjas és Liszt Ferenc-díjas magyar zongoraművészről, aki az egyik legjelentősebb és világszerte ismert zenei előadóművészünk, zongoristánk. Életének második felében a franciaországi Senlisben telepedett le családjával, ahol 1966-ban elindította a Festival de la Chaise Dieu-t, megvásárolta és felújította a rendkívül rossz állapotban lévő senlisi Saint Frambourg-kápolnát, ahol később koncertek sorát adta. Létrehozta a Cziffra-alapítványt, amely fiatal zenészek és képzőművészek támogatását tűzte ki céljául.",
+    "short_description": "Dokumentumfilm Cziffra György Magyar Örökség-díjas és Liszt Ferenc-díjas magyar zongoraművészről, aki az egyik legjelentősebb és világszerte ismert zenei előadóművészünk, zongoristánk. Életének második felében a franciaországi Senlisben telepedett le családjával, ahol 1966-ban elindította a Festival de la Chaise Dieu-t, megvásárolta és felújította a rendkívül rossz állapotban lévő senlisi Saint Frambourg-kápolnát, ahol később koncertek sorát adta....",
+    "company": "Duna Médiaszolgáltató Nonprofit Zrt.",
+    "year": "1996",
+    "country": "HUN",
+    "creators": [
+     "nincs adat (Rendező)",
+     "Talán Csaba (Operatőr)",
+     "Balogh Júlia (Szerkesztő)",
+     "Balogh Júlia (Főszerkesztő)",
+     "Bartos Bence (Technikus)",
+     "Budai Attila (Gyártásvezető)",
+     "Glósz Imre (Segédoperatőr)",
+     "Jüsztl Zsófia (Vágó)",
+     "Kovács Imre (Felvételvezető)"
+    ],
+    "contributors": [
+     "Cziffra Soleilka (Műsor résztvevő)",
+     "Lefébvre Philippe (Műsor résztvevő)"
     ],
     "genre": [
      "Dokumentum filmek"
     ],
     "collection": [],
     "quality": "SD",
-    "pg": "12",
-    "duration": "00:25:00:02",
+    "pg": "No PG",
+    "duration": "00:24:26:23",
     "ratio": "4:3",
     "hasSubtitle": true,
-    "isSeries": true,
+    "isSeries": false,
     "isHighlighted_b": null,
     "isBroadcastCatchup_b": null,
-    "seriesId": "TWlsbGVubml1bWkgbWVzw6lr",
+    "seriesId": "",
     "collectionId": null,
-    "episode": 102,
-    "episodes": "107",
+    "episode": 0,
+    "episodes": "0",
     "rank": null,
-    "playable": true,
-    "startTime_dt": "2026-11-06T00:26:41Z"
-   },
-   {
-    "id": "M3-87AA8993790994291",
-    "start_startTime_dts": [
-     "2026-11-05T16:53:09Z",
-     "2026-11-06T00:53:09Z",
-     "2026-11-06T08:53:09Z"
-    ],
-    "start_playable_dts": [
-     "2026-11-06T00:00:00Z",
-     "2026-11-05T00:00:00Z",
-     "2026-11-12T00:00:00Z"
-    ],
-    "start_durationTC_str": [
-     "00:04:26:23"
-    ],
-    "url": "M3-TE12UWFLM3hWVXNEcWhhc0pyMTZVcFNXMGdtZGRDUzZQMnBtTUJMeE5Xaz0",
-    "info": [
-     "Rendező: Gát György",
-     "Operatőr: Szalai András",
-     "Szerkesztő: Szentistványi Rita"
-    ],
-    "extended_info": [
-     "Rendező: Gát György",
-     "Operatőr: Szalai András",
-     "Szerkesztő: Szentistványi Rita",
-     "Szerkesztő: Vándor Ágnes",
-     "Animáció készítő: Lehotay Zoltán",
-     "Gyártásvezető: Sánta György",
-     "Társrendező: Sömjén Antónia",
-     "Író, Költő: Végh György"
-    ],
-    "title": "Linda mesél",
-    "subtitle": "Móka Miki mackója",
-    "description": "Móka Miki arra kéri édesanyját, hogy játékmackójának, Maci Lacinak vásároljon egy üveg mézet. Az édes méz olyan gyorsan fogy, hogy nem győznek a mackó étvágyán csodálkozni... Görbe Nóra, a Linda sorozat közkedvelt főszereplője kislányának, Annának meséli Végh György történetét.",
-    "short_description": "Móka Miki arra kéri édesanyját, hogy játékmackójának, Maci Lacinak vásároljon egy üveg mézet. Az édes méz olyan gyorsan fogy, hogy nem győznek a mackó étvágyán csodálkozni... Görbe Nóra, a Linda sorozat közkedvelt főszereplője kislányának, Annának meséli Végh György történetét.",
-    "company": "MTV",
-    "year": "1988",
-    "country": "HUN",
-    "creators": [
-     "Gát György (Rendező)",
-     "Szalai András (Operatőr)",
-     "Szentistványi Rita (Szerkesztő)",
-     "Vándor Ágnes (Szerkesztő)",
-     "Lehotay Zoltán (Animáció készítő)",
-     "Sánta György (Gyártásvezető)",
-     "Sömjén Antónia (Társrendező)",
-     "Végh György (Író, Költő)"
-    ],
-    "contributors": [
-     "Gát Anna (Műsor résztvevő)",
-     "Görbe Nóra (Szereplő)"
-    ],
-    "genre": [
-     "Fikció, dráma, irodalmi mű gyerekeknek"
-    ],
-    "collection": [],
-    "quality": "SD",
-    "pg": "6",
-    "duration": "00:04:26:23",
-    "ratio": "4:3",
-    "hasSubtitle": false,
-    "isSeries": true,
-    "isHighlighted_b": null,
-    "isBroadcastCatchup_b": null,
-    "seriesId": "TGluZGEgbWVzw6ls",
-    "collectionId": null,
-    "episode": 3,
-    "episodes": "41",
-    "rank": null,
-    "playable": true,
-    "startTime_dt": "2026-11-06T00:53:09Z"
-   },
-   {
-    "id": "M3-87AA8993790994A93",
-    "start_startTime_dts": [
-     "2026-11-05T16:57:50Z",
-     "2026-11-06T00:57:50Z",
-     "2026-11-06T08:57:50Z"
-    ],
-    "start_durationTC_str": [
-     "00:05:55:00"
-    ],
-    "url": "M3-bW1BMHRaWjhYa241d1JOY01qZXdHREpLbGRHd2NqNmhMaE16OFVvRzVRQT0",
-    "info": [
-     "Rendező: Gát György",
-     "Operatőr: Szalai András",
-     "Szerkesztő: Szentistványi Rita"
-    ],
-    "extended_info": [
-     "Rendező: Gát György",
-     "Operatőr: Szalai András",
-     "Szerkesztő: Szentistványi Rita",
-     "Szerkesztő: Vándor Ágnes",
-     "Animáció készítő: Budaváriné Szabó Klára",
-     "Gyártásvezető: Sánta György",
-     "Társrendező: Sömjén Antónia",
-     "Író, Költő: Tordon Ákos"
-    ],
-    "title": "Linda mesél",
-    "subtitle": "Pilleruha",
-    "description": "A takácsmester, a pók egyszerre hét szövőszéken dolgozott. Egy napon a káposztalepke kopogtatott be hozzá és csillogóan színes ruhát szeretett volna. Meg is kapta, de amint kilibbent és felismerték, máris fordult vissza egy még szebb, még színesebb ruháért... Görbe Nóra, a Linda sorozat közkedvelt főszereplője kislányának, Annának meséli Tordon Ákos történetét.",
-    "short_description": "A takácsmester, a pók egyszerre hét szövőszéken dolgozott. Egy napon a káposztalepke kopogtatott be hozzá és csillogóan színes ruhát szeretett volna. Meg is kapta, de amint kilibbent és felismerték, máris fordult vissza egy még szebb, még színesebb ruháért... Görbe Nóra, a Linda sorozat közkedvelt főszereplője kislányának, Annának meséli Tordon Ákos történetét.",
-    "company": "MTV",
-    "year": "1988",
-    "country": "HUN",
-    "creators": [
-     "Gát György (Rendező)",
-     "Szalai András (Operatőr)",
-     "Szentistványi Rita (Szerkesztő)",
-     "Vándor Ágnes (Szerkesztő)",
-     "Budaváriné Szabó Klára (Animáció készítő)",
-     "Sánta György (Gyártásvezető)",
-     "Sömjén Antónia (Társrendező)",
-     "Tordon Ákos (Író, Költő)"
-    ],
-    "contributors": [
-     "Gát Anna (Műsor résztvevő)",
-     "Görbe Nóra (Szereplő)"
-    ],
-    "genre": [
-     "Fikció, dráma, irodalmi mű gyerekeknek"
-    ],
-    "collection": [],
-    "quality": "SD",
-    "pg": "6",
-    "duration": "00:05:55:00",
-    "ratio": "4:3",
-    "hasSubtitle": false,
-    "isSeries": true,
-    "isHighlighted_b": null,
-    "isBroadcastCatchup_b": null,
-    "seriesId": "TGluZGEgbWVzw6ls",
-    "collectionId": null,
-    "episode": 4,
-    "episodes": "41",
-    "rank": null,
-    "playable": true,
-    "startTime_dt": "2026-11-06T00:57:50Z"
+    "playable": false,
+    "startTime_dt": "2026-11-05T23:35:07Z"
    }
   ]
  }

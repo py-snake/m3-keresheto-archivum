@@ -221,3 +221,60 @@ func TestThrottle(t *testing.T) {
 		t.Fatalf("3 requests with a 120 ms delay took only %s", d)
 	}
 }
+
+func TestRequestBudgetIsAHardCeiling(t *testing.T) {
+	fake := fakeupstream.New(t)
+	c, err := NewClient(Options{BaseURL: fake.URL, UserAgent: "x", RootCAs: fake.CAs, MaxRequests: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		if _, err := c.CollectionIDs(ctx); err != nil {
+			t.Fatalf("request %d: %v", i+1, err)
+		}
+	}
+	if _, err := c.CollectionIDs(ctx); !errors.Is(err, ErrBudget) {
+		t.Fatalf("the 4th request must hit the budget, got %v", err)
+	}
+	if _, err := c.Item(ctx, "M3-59945851A60999998"); !errors.Is(err, ErrBudget) {
+		t.Fatalf("every endpoint shares the budget: %v", err)
+	}
+	if c.Requests() != 3 || len(fake.Requests) != 3 {
+		t.Fatalf("counted %d, upstream saw %d", c.Requests(), len(fake.Requests))
+	}
+}
+
+func TestFailedRequestsCountAgainstTheBudgetToo(t *testing.T) {
+	fake := fakeupstream.New(t)
+	fake.Override = func(w http.ResponseWriter, r *http.Request) bool {
+		http.Error(w, "boom", http.StatusInternalServerError)
+		return true
+	}
+	c, _ := NewClient(Options{BaseURL: fake.URL, UserAgent: "x", RootCAs: fake.CAs, MaxRequests: 2})
+	_, _ = c.CollectionIDs(context.Background())
+	_, _ = c.CollectionIDs(context.Background())
+	if _, err := c.CollectionIDs(context.Background()); !errors.Is(err, ErrBudget) {
+		t.Fatalf("a retry loop against a failing upstream must still stop: %v", err)
+	}
+}
+
+func TestParsePlayableAndWindow(t *testing.T) {
+	raw := `{"id":"M3-ABC1","title":"t","playable":false,"start_playable_dts":["2026-01-11T00:00:00Z","2026-01-04T00:00:00Z","junk"]}`
+	p, _, err := ParseProgram([]byte(raw))
+	if err != nil || !p.PlayableKnown || p.Playable {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if p.WindowFirst >= p.WindowLast || p.WindowFirst == 0 {
+		t.Fatalf("window %d..%d", p.WindowFirst, p.WindowLast)
+	}
+	for _, in := range []string{`{"id":"M3-ABC1","title":"t"}`, `{"id":"M3-ABC1","title":"t","playable":"yes"}`, `{"id":"M3-ABC1","title":"t","playable":null}`, `{"id":"M3-ABC1","title":"t","playable":1}`} {
+		p, _, err := ParseProgram([]byte(in))
+		if err != nil || p.PlayableKnown {
+			t.Errorf("%s: only a real JSON boolean counts as an observation (%+v %v)", in, p.PlayableKnown, err)
+		}
+	}
+	if p, _, _ := ParseProgram([]byte(`{"id":"M3-ABC1","title":"t","playable":true}`)); !p.PlayableKnown || !p.Playable {
+		t.Fatal("true not parsed")
+	}
+}
