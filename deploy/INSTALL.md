@@ -6,10 +6,34 @@ Ez a leírás a rootless podmanra (4.9 vagy újabb) és a meglévő nginx + clou
 
 > **Biztonsági megjegyzés.** Az nginx és az m3 hálózata csak ugyanazon felhasználó alatt osztható meg, ezért az m3 ugyanaz a Linux-felhasználó alatt fut, mint az nginx. Ha az m3 konténeréből valaki kitörne, a felhasználó többi dolgát (más konténerek, secretek, `.env` fájlok) is elérné. Az m3 konténerei ezért szigorúak (csak olvasható fájlrendszer, `cap-drop=all`, `no-new-privileges`, a web konténernek nincs kimenő hálózata). Ha ez nem elég, külön felhasználó és külön nginx a tisztább megoldás. Lásd [../docs/SECURITY-ASSESSMENT.md](../docs/SECURITY-ASSESSMENT.md).
 
-## 1. Image építése
+## 1. Image
+
+### A) Kis szerveren: az image-et másik gépen építed, és átviszed (ajánlott)
+
+A Go fordító a beágyazott SQLite miatt sok memóriát eszik: **hideg buildnél mérve ~1,1 GB csúcs-memória és ~110 CPU-másodperc** (8 magon 30 mp). Egy 1–2 GB RAM-os VPS ilyenkor swapel és percekig vagy véglegesen elakad. A végeredmény egyetlen 18 MB-os statikus bináris, az image 7 MB tömörítve, ezért érdemes máshol építeni:
 
 ```bash
-git clone git@github.com:py-snake/m3-keresheto-archivum.git && cd m3-keresheto-archivum
+# a fejlesztői gépen, a repó gyökerében (go ág)
+podman build --target m3 -t localhost/m3:latest .
+podman save localhost/m3:latest | gzip -9 > m3-image.tar.gz
+sha256sum m3-image.tar.gz
+scp m3-image.tar.gz SZERVER:/tmp/
+
+# a szerveren, a futtató felhasználóként (itt john)
+sha256sum /tmp/m3-image.tar.gz                       # egyezzen az előzővel
+gunzip -c /tmp/m3-image.tar.gz | podman load         # Loaded image: localhost/m3:latest
+podman run --rm localhost/m3:latest version          # m3 go1.26.10
+rm /tmp/m3-image.tar.gz
+```
+
+A repót a szerveren így is érdemes klónozni (`git clone https://github.com/py-snake/m3-keresheto-archivum.git ~/m3-src && cd ~/m3-src && git checkout go`), de csak az egységek és az nginx-konfig miatt: **buildelni ott nem kell**. Frissítéskor ugyanez: új image építése, átvitele, `systemctl --user restart m3-web.service`.
+
+### B) Elég nagy szerveren: építés helyben
+
+Legalább ~3 GB szabad RAM ajánlott (vagy swap).
+
+```bash
+git clone https://github.com/py-snake/m3-keresheto-archivum.git && cd m3-keresheto-archivum
 git checkout go
 podman build --target m3 -t localhost/m3:latest .
 ```
