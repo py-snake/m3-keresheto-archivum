@@ -16,12 +16,21 @@ podman build --target m3 -t localhost/m3:latest .
 
 ## 2. Egységek és adatkönyvtár
 
+Az adat helye tetszőleges, de **a futtató felhasználónak (itt `john`) írnia kell**, mert a gyűjtő konténerek az ő azonosítójával (`--userns=keep-id`) írják az `m3.sqlite`-ot, az `images/`-t és az `export/`-ot. A web konténer csak olvassa (`:ro`). Az egységekben az alapértelmezés `%h/m3/data` (a futtató home-ja); ha az alkalmazásaid a `/srv/apps` alatt vannak, ott a helye:
+
 ```bash
-mkdir -p ~/m3/data ~/.config/containers/systemd
+sudo mkdir -p /srv/apps/m3/data
+sudo chown -R john:john /srv/apps/m3
+sudo chmod 755 /srv/apps/m3 /srv/apps/m3/data      # mások (pl. a mentést végző ubuntu) olvashatják; az adat nyilvános
+
+mkdir -p ~/.config/containers/systemd
 cp deploy/quadlet/* ~/.config/containers/systemd/
+sed -i 's#%h/m3/data#/srv/apps/m3/data#' ~/.config/containers/systemd/m3-*.container   # az adat helye az egységekben
 /usr/lib/systemd/user-generators/podman-user-generator --dryrun | head   # a generátor hibát jelez, ha valami nem jó
 systemctl --user daemon-reload
 ```
+
+A `:z` az `Volume=` sorokban SELinux-címkézés; Ubuntún (AppArmor, nincs SELinux) hatástalan, de nem árt.
 
 ## 3. Az nginx bekötése az `m3-internal` hálózatra
 
@@ -77,6 +86,6 @@ Nyisd meg a subdomaint: keresés, egy borítókép, `/api/v1/`, `/export/`. A `P
 ## Üzemeltetés
 
 * **Frissítés:** `git pull`, `podman build --target m3 -t localhost/m3:latest .`, majd `systemctl --user restart m3-web.service`. Az adat nem változik.
-* **Mentés:** az `~/m3/data/m3.sqlite` bármikor másolható (soha nem módosul helyben, lásd a README-t). A `backups/` a régi változatokat tartja.
+* **Mentés:** az `/srv/apps/m3/data/m3.sqlite` (vagy ahová az adatot tetted) bármikor másolható (soha nem módosul helyben, lásd a README-t). A `backups/` a régi változatokat tartja.
 * **Első napon** érdemes kikapcsolni az API-t és a letöltéseket (`M3_PUBLIC_API=0`, `M3_PUBLIC_EXPORT=0` a `m3-web.container`-ben), nézni a naplót, és utána bekapcsolni.
 * **Ellenőrző parancs a szerveren:** `scripts/ci.sh --full` ugyanezt a kódot futtatja le podmannal (hálózat kell hozzá).
