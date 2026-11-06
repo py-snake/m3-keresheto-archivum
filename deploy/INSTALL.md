@@ -48,7 +48,7 @@ sudo chown -R john:john /srv/apps/m3
 sudo chmod 755 /srv/apps/m3 /srv/apps/m3/data      # mások (pl. a mentést végző ubuntu) olvashatják; az adat nyilvános
 
 mkdir -p ~/.config/containers/systemd
-cp deploy/quadlet/* ~/.config/containers/systemd/
+cp deploy/quadlet/*.container deploy/quadlet/*.network ~/.config/containers/systemd/
 sed -i 's#%h/m3/data#/srv/apps/m3/data#' ~/.config/containers/systemd/m3-*.container   # az adat helye az egységekben
 /usr/lib/systemd/user-generators/podman-user-generator --dryrun | head   # a generátor hibát jelez, ha valami nem jó
 systemctl --user daemon-reload
@@ -91,6 +91,10 @@ podman healthcheck run m3-web                         # 0 = rendben
 systemctl --user restart nginx.service                # felveszi az új hálózatot és a konfigot
 podman exec nginx nginx -t
 podman exec nginx getent hosts m3-web                 # látnia kell az m3-web címét
+# Az időzítők sima systemd egységek (a Quadlet a .timer fájlokat nem dolgozza fel), ezért máshová kerülnek:
+mkdir -p ~/.config/systemd/user
+cp ~/m3-src/deploy/quadlet/*.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
 systemctl --user enable --now m3-ingest-daily.timer m3-ingest-weekly.timer m3-export.timer
 systemctl --user start m3-export.service              # egyszer, hogy legyen letölthető fájl
 ```
