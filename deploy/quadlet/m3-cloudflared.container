@@ -4,7 +4,6 @@ After=m3-web.service
 Requires=m3-web.service
 
 [Container]
-# Pinned by digest (cloudflared version 2026.10.7 (built 2026-10-30-17:17 UTC)); update on purpose: pull the new image, put its digest here.
 ContainerName=m3-cloudflared
 # Pinned by digest (cloudflared 2026.10.7). To update: pull the new image and put its digest here.
 Image=docker.io/cloudflare/cloudflared@sha256:32f933aa6fe1f69c5885b93f3c92cc3f60cca8f0530868bc3bc2cc446114a385
