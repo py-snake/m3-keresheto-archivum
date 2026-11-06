@@ -120,9 +120,14 @@ check $? "m3 export needs no network and finishes"
 [ -s "$DATA/export/manifest.json" ]; check $? "the manifest was written (last)"
 # the checks below send ~30 requests from one client in a burst: raise the rate limit for them
 # (the limiter itself is covered by the unit tests)
-podman run -d --name m3web --network "$NET_INT" "${HARD[@]}" -e M3_RATE_LIMIT=100 -e M3_RATE_BURST=500 -v "$DATA:/data:ro,z" "$IMG" serve >/dev/null
+# the health command is taken from the real Quadlet unit and run through podman's own health mechanism:
+# a plain string would be run with /bin/sh -c, and the scratch image has no shell (found on a real server)
+HEALTH_CMD=$(sed -n 's/^HealthCmd=//p' "$(dirname "$0")/../../deploy/quadlet/m3-web.container")
+[ -n "$HEALTH_CMD" ]; check $? "the Quadlet unit defines a HealthCmd"
+podman run -d --name m3web --network "$NET_INT" "${HARD[@]}" -e M3_RATE_LIMIT=100 -e M3_RATE_BURST=500 --health-cmd "$HEALTH_CMD" --health-interval 1h -v "$DATA:/data:ro,z" "$IMG" serve >/dev/null
 sleep 2
 podman exec m3web /m3 healthcheck; check $? "healthcheck inside the hardened container"
+podman healthcheck run m3web; check $? "the Quadlet HealthCmd works through podman's health mechanism (no shell in the image)"
 
 cat >"$WORK/check.py" <<'PY'
 import http.client, re, sys

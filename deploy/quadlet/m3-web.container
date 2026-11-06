@@ -21,7 +21,8 @@ Volume=%h/m3/data:/data:ro,z
 Environment=M3_LISTEN=:8080
 # nginx (the only other container on m3-internal) is the trusted proxy: only it may set forwarded headers
 Environment=M3_TRUSTED_PROXIES=10.89.77.0/24
-HealthCmd=/m3 healthcheck
+# JSON array form on purpose: a plain string is run with /bin/sh -c, and the scratch image has no shell
+HealthCmd=["/m3", "healthcheck"]
 HealthInterval=30s
 HealthRetries=3
 HealthOnFailure=kill
