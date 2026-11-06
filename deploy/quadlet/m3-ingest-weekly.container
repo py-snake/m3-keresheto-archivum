@@ -13,7 +13,7 @@ NoNewPrivileges=true
 UserNS=keep-id
 User=%U
 Group=%G
-Memory=512m
+PodmanArgs=--memory=512m
 # the ingest is the only role that may write the data directory
 Volume=%h/m3/data:/data:z
 # optional: send every outbound request through a proxy instead of this machine's own address.

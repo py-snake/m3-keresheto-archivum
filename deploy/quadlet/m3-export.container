@@ -13,7 +13,7 @@ NoNewPrivileges=true
 UserNS=keep-id
 User=%U
 Group=%G
-Memory=512m
+PodmanArgs=--memory=512m
 Volume=%h/m3/data:/data:z
 
 [Service]

@@ -15,7 +15,7 @@ UserNS=keep-id
 User=%U
 Group=%G
 PidsLimit=256
-Memory=256m
+PodmanArgs=--memory=256m
 # the data directory is the host user's: the web role can only read it
 Volume=%h/m3/data:/data:ro,z
 Environment=M3_LISTEN=:8080
