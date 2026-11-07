@@ -1,0 +1,67 @@
+{{define "content"}}
+{{with .Program}}{{$hist := index $.History .ProgramID}}
+<article class="program">
+	<nav class="crumbs mdc-typography--caption" aria-label="Morzsamenü"><a href="/">Kezdőlap</a> <span aria-hidden="true">›</span> <span aria-current="page">{{.Title}}</span></nav>
+
+	<div class="program__top">
+		<div class="program__cover">
+			{{if eq .ImageState 1}}<img src="/img/{{.ProgramID}}.jpg" alt="{{.Title}} borítóképe" decoding="async">{{else}}<img src="{{asset "placeholder.svg"}}" alt="" decoding="async">{{end}}
+			{{with $d := futureDate . $.Today}}<div class="card__soon" title="Közzététel dátuma">📅 {{$d}}</div>{{end}}
+		</div>
+		<div class="program__head">
+			<h1 class="program__title">
+				{{.Title}}
+				{{if .IsHighlighted}}<span class="badge badge--highlight" title="Az M3 kiemelt műsora">Kiemelt</span>{{end}}
+				{{if .IsLive}}<span class="badge badge--live">Élő</span>{{end}}
+			</h1>
+			{{if or .Subtitle .IsSeries}}<p class="program__sub">{{if .Subtitle}}{{.Subtitle}}{{end}}{{if .IsSeries}} <span class="card__ep">({{.Episode}}. / {{.Episodes}})</span>{{end}}</p>{{end}}
+			<div class="card__meta">
+				{{if .GoneAt}}<span class="avail avail--gone" title="{{checked . $hist}}">Eltűnt az M3-ról</span>{{else if .PlayableKnown}}{{if .Playable}}<span class="avail avail--yes" title="{{checked . $hist}}">Elérhető</span>{{else}}<span class="avail avail--no" title="{{checked . $hist}}">Nem elérhető</span>{{end}}{{else}}<span class="avail avail--unknown" title="Az elérhetőséget még nem ellenőriztük.">Ismeretlen</span>{{end}}
+				<a class="m3link" href="https://nemzetiarchivum.hu/m3/{{.ProgramID}}" target="_blank" rel="noopener noreferrer">Az M3 oldalán ↗</a>
+				<span class="m3id" title="Azonosító (kattintásra kijelölődik)">{{.ProgramID}}</span>
+			</div>
+			{{with $.Facts}}<dl class="program__facts">
+				{{range .}}<div><dt>{{.Key}}</dt><dd>{{.Value}}</dd></div>
+				{{end}}
+			</dl>{{end}}
+		</div>
+	</div>
+
+	{{if .Description}}<section class="program__section">
+		<h2>Leírás</h2>
+		<p>{{range $i, $l := lines .Description}}{{if $i}}<br>{{end}}{{$l}}{{end}}</p>
+	</section>{{else if .ShortDescription}}<section class="program__section">
+		<h2>Leírás</h2>
+		<p>{{range $i, $l := lines .ShortDescription}}{{if $i}}<br>{{end}}{{$l}}{{end}}</p>
+	</section>{{end}}
+
+	{{if .Creators}}<section class="program__section">
+		<h2>Készítők</h2>
+		<ul class="program__people">{{range lines .Creators}}<li>{{.}}</li>{{end}}</ul>
+	</section>{{end}}
+
+	{{if .Contributors}}<section class="program__section">
+		<h2>Közreműködők</h2>
+		<ul class="program__people">{{range lines .Contributors}}<li>{{.}}</li>{{end}}</ul>
+	</section>{{end}}
+
+	<details class="card__more program__all">
+		<summary class="mdc-typography--caption">Minden tárolt adat</summary>
+		<div class="mdc-data-table details__table">
+			<table class="mdc-data-table__table">
+				<tbody class="mdc-data-table__content">
+					{{range details . $hist}}
+					<tr class="mdc-data-table__row">
+						<td class="mdc-data-table__cell mdc-data-table__cell--numeric mdc-typography--caption">{{.Key}}</td>
+						<td class="mdc-data-table__cell mdc-typography--caption">{{range $i, $l := lines .Value}}{{if $i}}<br>{{end}}{{$l}}{{end}}</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+	</details>
+
+	<p class="program__back"><a class="pager__go" href="/">← Vissza a kereséshez</a></p>
+</article>
+{{end}}
+{{end}}

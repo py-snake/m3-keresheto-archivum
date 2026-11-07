@@ -148,3 +148,31 @@ func TestLockWait(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicURLMustBeAnOrigin(t *testing.T) {
+	c, err := FromEnv(env(nil))
+	if err != nil || c.PublicURL != "" {
+		t.Fatalf("default must be empty (the site is then private to search engines): %q %v", c.PublicURL, err)
+	}
+	for in, want := range map[string]string{
+		"https://m3.example.hu":      "https://m3.example.hu",
+		"https://M3.Example.HU/":     "https://m3.example.hu",
+		"  https://m3.example.hu  ":  "https://m3.example.hu",
+		"http://localhost:8080":      "http://localhost:8080",
+		"https://sub.example.hu:443": "https://sub.example.hu:443",
+	} {
+		c, err := FromEnv(env(map[string]string{"M3_PUBLIC_URL": in}))
+		if err != nil || c.PublicURL != want {
+			t.Errorf("%q -> %q, %v (want %q)", in, c.PublicURL, err, want)
+		}
+	}
+	for _, bad := range []string{
+		"m3.example.hu", "ftp://m3.example.hu", "javascript:alert(1)", "https://", "https:///x", "//m3.example.hu",
+		"https://user:pw@m3.example.hu", "https://m3.example.hu/path", "https://m3.example.hu/?q=1", "https://m3.example.hu#frag",
+		"https://m3.example.hu?", "https://m3.example.hu:99999", "https://m3.example.hu:0", "https://m3.example hu", "https://m3.example.hu\\x",
+	} {
+		if c, err := FromEnv(env(map[string]string{"M3_PUBLIC_URL": bad})); err == nil {
+			t.Errorf("%q accepted as %q: only an origin may be used to build absolute links", bad, c.PublicURL)
+		}
+	}
+}

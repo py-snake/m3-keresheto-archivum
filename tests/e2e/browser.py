@@ -146,7 +146,7 @@ def fragment_total(query):
 
 
 def fragment_first_title(query):
-    m = re.search(r'class="card__name">([^<]*)</span>', fragment_html(query))
+    m = re.search(r'class="card__name">(?:<a[^>]*>)?([^<]*)', fragment_html(query))
     return html.unescape(m.group(1)) if m else None
 
 
@@ -276,6 +276,22 @@ def main():
               page.wait_for(f"document.querySelectorAll('.card').length > 10 && document.querySelector('.list__total').textContent.trim() === {json.dumps(want_total)}"),
               f"cards={page.js('document.querySelectorAll(\'.card\').length')} want {want_total!r}")
         check("the page size is in the address bar", "db=50" in page.js("location.search"))
+
+        # 4c. the title of a result opens the program's own page, with its own title and a way back
+        page.call("Page.navigate", url=BASE + "/?kereses=film&db=10")
+        page.wait_for("document.readyState === 'complete' && !!document.querySelector('.card__link')")
+        href = page.js("(document.querySelector('.card__link') || {getAttribute: () => null}).getAttribute('href')")
+        check("every result links to its page (/m3/<id>)", bool(href) and href.startswith("/m3/M3-"), str(href))
+        if href:
+            card_title = page.js("document.querySelector('.card__link').textContent.trim()")
+            page.js("document.querySelector('.card__link').click()")
+            check("the link opens the program page", page.wait_for(f"location.pathname === {json.dumps(href)} && !!document.querySelector('h1.program__title')"), page.js("location.href"))
+            check("the program page shows the same title as the result", page.js("document.querySelector('h1.program__title').textContent.trim().split('\\n')[0].trim()") == card_title)
+            check("the page has a description in its head", page.js("!!document.querySelector('meta[name=description]') && document.querySelector('meta[name=description]').content.length > 10"))
+            check("the page offers the way back", page.js("!!document.querySelector('.program__back a[href=\"/\"]')"))
+
+        page.call("Page.navigate", url=BASE + "/")  # the next checks need the search page again
+        page.wait_for("document.readyState === 'complete' && !!document.getElementById('search-field')")
 
         # 5. hostile text is shown as text, never run
         type_into(page, "#search-field", "<img src=x onerror=window.__pwn=1>")

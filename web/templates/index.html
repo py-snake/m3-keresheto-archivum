@@ -102,7 +102,7 @@
 		</div>
 		<div class="card__body">
 			<h2 class="card__title">
-				<span class="card__name">{{.Title}}</span>
+				<span class="card__name"><a class="card__link" href="/m3/{{.ProgramID}}">{{.Title}}</a></span>
 				{{if .IsHighlighted}}<span class="badge badge--highlight" title="Az M3 kiemelt műsora">Kiemelt</span>{{end}}
 				{{if .IsLive}}<span class="badge badge--live">Élő</span>{{end}}
 				{{if .Subtitle}}<span class="card__sub">&#8212; {{.Subtitle}}</span>{{end}}

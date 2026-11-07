@@ -126,6 +126,24 @@ A Cloudflare-nél: sebességkorlát és bot-védelem a subdomainre; a fiókon 2F
 
 **Gyorsítótár.** Az alkalmazás maga küldi a `Cache-Control` fejlécet (borítók és a lenyomatos statikus fájlok 1 év, a HTML 60 mp, lásd a README „Gyorsítótárazás" részét), ezért az nginx-ben nem kell semmit beállítani. A Cloudflare *Caching → Configuration* oldalán a *Browser Cache TTL* maradjon **Respect Existing Headers**, és érdemes bekapcsolni a *Tiered Cache*-t (Smart Tiered Caching, ingyenes): így nem minden adatközpont kéri külön az eredeti szervertől ugyanazt a képet. Egy kép kényszerített frissítése (ha valaha kell): *Caching → Configuration → Purge Cache → Custom Purge*, a kép címével.
 
+## 6/b. Keresők és linkelőnézet (opcionális)
+
+Ha az oldalt a Google-ben és az üzenetküldők előnézetében is meg szeretnéd mutatni, add meg a nyilvános címét a `m3-web.container`-ben (a `M3_TRUSTED_PROXIES` sor alá):
+
+```ini
+Environment=M3_PUBLIC_URL=https://m3.example.hu
+```
+
+Cseréld a saját címedre (séma és hoszt, útvonal nélkül), majd `systemctl --user daemon-reload && systemctl --user restart m3-web.service`. Nélküle az oldal `noindex,nofollow`, a `robots.txt` mindent tilt, és nincs `sitemap.xml`. Ellenőrzés:
+
+```bash
+curl -s https://m3.example.hu/robots.txt | head -5        # Allow: / és a Sitemap sor a saját címeddel
+curl -s https://m3.example.hu/sitemap.xml | grep -c '<loc>'   # a műsorok száma + 1
+curl -s https://m3.example.hu/m3/<egy-azonosító> | grep -E 'og:|canonical|description'
+```
+
+A Cloudflare mögött: a Cloudflare gyorsítótárazza a képeket, a `robots.txt`-t és a sitemapet nem kell kivenni belőle. A *Bot Fight Mode* és a WAF-szabályok blokkolhatják a Google és a megosztási robotok (Facebook, Telegram) kéréseit: ha a Search Console vagy a Sharing Debugger „nem érhető el" hibát jelez, nézd meg a *Security → Events* naplót. A Search Console beállításának lépései a README „Keresők és linkelőnézet" részében vannak.
+
 ## 7. Ellenőrzés kívülről
 
 Nyisd meg a subdomaint: keresés, egy borítókép, `/api/v1/`, `/export/`. A `POST` kérésre 403-at kell kapnod.

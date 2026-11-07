@@ -135,6 +135,7 @@ backups/m3-ÉÉÉÉHHNN-….sqlite   a korábbi adatbázisok (alapból 14 db, ke
 | `M3_REQUEST_DELAY_MS` | szünet két kimenő kérés között | `250` |
 | `M3_MAX_REQUESTS` | **kemény plafon**: legfeljebb ennyi kérést küld egy gyűjtő folyamat az M3 felé, utána leáll és a többit a következő futásra hagyja | `2000` |
 | `M3_RECHECK_PER_RUN` | az `ingest recheck` futásonként ennyi műsort kérdez le újra (`0` = kikapcsolva, legfeljebb `500`) | `0` |
+| `M3_PUBLIC_URL` | a weboldal nyilvános címe (`https://host`, útvonal nélkül). Ebből készülnek a `canonical` hivatkozások, a `sitemap.xml` és a linkelőnézetek képcíme. Nélküle a `robots.txt` mindent tilt és nincs sitemap | nincs |
 | `M3_LOCK_WAIT_SECONDS` | ennyi ideig vár egy gyűjtés vagy export, ha másik fut (`0` = azonnal hibával leáll), 0–3600 | `600` |
 | `M3_RECHECK_DELAY_MS` | szünet két újraellenőrző kérés között (legalább `500`) | `3000` |
 | `M3_REFRESH_PER_RUN` | az `ingest refresh` futásonként ennyi műsor leíró adatát kérdezi le újra és frissíti (`0` = kikapcsolva, legfeljebb `500`) | `0` |
@@ -167,6 +168,32 @@ UPSTREAM_PROXY_INSECURE=1
 * A proxy jelszava nem kerül a naplóba vagy hibaüzenetbe. Jelszót ne tégy a parancssorba; használj `podman secret`-et (lásd a Quadlet egységeket).
 * A környezeti `HTTP_PROXY` / `HTTPS_PROXY` változókat a program **szándékosan nem használja**: csak az `UPSTREAM_PROXY` számít.
 * Ha a proxy nem érhető el, a program **nem esik vissza közvetlen kapcsolatra**, hanem hibával leáll.
+
+## Keresők és linkelőnézet
+
+Minden műsornak saját oldala van (`/m3/<azonosító>`: cím, leírás, készítők, közreműködők, a főbb adatok, borító, elérhetőség), a találati lista a címekre erre mutat. Ezekből épül a keresőoptimalizálás és az előnézet.
+
+**Bekapcsolás:** a `M3_PUBLIC_URL` beállítással (pl. `https://m3.example.hu`, a `m3-web.container`-ben). Nélküle az oldal magát a keresők elől elzárja (`robots.txt`: `Disallow: /`, minden oldalon `noindex,nofollow`), és nincs `sitemap.xml`. A cím **csak a beállításból** jön, a kérés `Host` fejlécéből soha (az hamisítható, és egy gyorsítótár megőrizné a hamis címet).
+
+| Mi | Hogyan |
+|---|---|
+| `/sitemap.xml` | a kezdőlap és minden, az M3 által még ismert műsor oldala, `lastmod` dátummal (legfeljebb 50 000 cím) |
+| `/robots.txt` | megengedi az oldalakat és a képeket; tiltja az `/api/`, `/export/` útvonalat és a keresési/szűrési változatokat (végtelen sok kombináció). A tiltás **paraméterenként** van megadva (`/*?kereses=`, `/*&kereses=`, …), mert egy általános `Disallow: /*?` a stíluslapot és a szkriptet (`/static/app.css?v=…`) is tiltaná, amit a keresőknek az oldal megjelenítéséhez látniuk kell. A végén a `Sitemap:` sor |
+| Indexelés | a kezdőlap és a műsoroldalak indexelhetők (`index,follow`); a lista `/2`, `/3`, … oldalai és minden keresési változat `noindex,follow`; az M3-ról eltűnt műsor oldala `noindex` és nincs a sitemapban |
+| Cím és leírás | műsoronként egyedi `<title>` (cím – alcím (év) \| oldalnév, legfeljebb 70 karakter) és `meta description` (a rövid leírás, szóhatáron vágva, legfeljebb 155 karakter), `canonical` hivatkozás, egyetlen `<h1>` (a műsor címe) |
+| Linkelőnézet | Open Graph és Twitter-kártya: cím, leírás, kép, cím, oldalnév, nyelv. A kép a műsor borítója, borító nélkül az oldal megosztási alapképe (`og-default.png`, 1200×630) |
+
+A borítók indexelhetők (képkeresőben is megjelenhetnek); a borítók szerzői joga az M3-é, a közzététel felelőssége az üzemeltetőé.
+
+**A Google Search Console beállítása** (egyszer):
+1. Search Console → *Tulajdon hozzáadása*: *Tartomány* (DNS TXT rekorddal, a DNS-szolgáltatónál) vagy *URL-előtag* (`https://m3.example.hu/`, HTML-fájllal vagy meta-taggel).
+2. *Oldaltérképek* → add meg: `sitemap.xml` → *Beküldés*.
+3. *URL-vizsgálat* → az oldal címe → *Indexelés kérése* (a kezdőlapra és egy műsoroldalra).
+4. A feldolgozás napokat, hetekig is eltarthat; új oldalnál a „Felfedezve, jelenleg nincs indexelve" állapot gyakori, nem hiba.
+
+**A linkelőnézet kipróbálása:** a Facebook *Sharing Debugger* (a Messenger is ezt használja, itt lehet a tárolt előnézetet frissíteni), a Telegram `@WebpageBot` és az `opengraph.xyz` mutatja, amit a robotok látnak. A Signal az előnézetet a küldő eszköze kéri le. Ha egy robot nem kapja meg az oldalt, nézd meg a Cloudflare *Security → Events* naplóját: a *Bot Fight Mode* és a WAF-szabályok blokkolhatják a megosztási robotokat.
+
+Nincs JSON-LD (strukturált adat): az oldal CSP-je (`script-src 'self'`) szándékosan nem enged beágyazott szkriptet, és a keresők a címet, leírást és tartalmat enélkül is feldolgozzák.
 
 ## Gyorsítótárazás
 

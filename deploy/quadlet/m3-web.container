@@ -21,6 +21,10 @@ Volume=%h/m3/data:/data:ro,z
 Environment=M3_LISTEN=:8080
 # nginx (the only other container on m3-internal) is the trusted proxy: only it may set forwarded headers
 Environment=M3_TRUSTED_PROXIES=10.89.77.0/24
+# The public address of the site (scheme://host, no path). With it the site invites search engines (robots.txt,
+# sitemap.xml, canonical links) and gives link previews an absolute image address; without it the site asks
+# crawlers to stay away. Set your own address here:
+# Environment=M3_PUBLIC_URL=https://m3.example.hu
 # JSON array form on purpose: a plain string is run with /bin/sh -c, and the scratch image has no shell
 HealthCmd=["/m3", "healthcheck"]
 HealthInterval=30s

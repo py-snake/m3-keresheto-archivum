@@ -62,6 +62,10 @@ type Options struct {
 	Now            func() time.Time
 	// PublicAPI / PublicExport switch the REST API and the download pages on.
 	PublicAPI, PublicExport bool
+	// PublicURL is the public address of the site (https://host, no path). Absolute addresses
+	// (canonical links, the sitemap, link previews) are built from it; empty = the site is private to
+	// search engines and has no sitemap.
+	PublicURL string
 }
 
 // Server is the m3 web application.
@@ -147,7 +151,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{page}", s.index)
 	mux.HandleFunc("GET /img/{file}", s.image)
 	mux.HandleFunc("GET /static/", s.staticFile)
+	mux.HandleFunc("GET /m3/{id}", s.program)
 	mux.HandleFunc("GET /robots.txt", s.robots)
+	if s.o.PublicURL != "" {
+		mux.HandleFunc("GET /sitemap.xml", s.sitemap)
+	}
 	mux.HandleFunc("GET /healthz", s.health)
 	if s.o.PublicExport {
 		mux.HandleFunc("GET /export/{$}", s.exportIndex)
@@ -364,6 +372,8 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		data.Elapsed = fmt.Sprintf("Lekérdezés: %.3f mp", time.Since(start).Seconds())
 	}
 
+	data.Meta = s.indexMeta(r, data, status)
+
 	var buf bytes.Buffer // render completely first: a template error must not leave a half page
 	name, root := "layout", s.pages["index"]
 	if fragment {
@@ -447,12 +457,6 @@ func (s *Server) staticFile(w http.ResponseWriter, r *http.Request) {
 	s.static.ServeHTTP(w, r)
 }
 
-func (s *Server) robots(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	_, _ = w.Write([]byte("User-agent: *\nDisallow: /\n"))
-}
-
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -484,5 +488,6 @@ func OptionsFrom(cfg *config.Config, src *store.Source, log *slog.Logger) Option
 		MaxInFlight:    cfg.MaxInFlight,
 		PublicAPI:      cfg.PublicAPI,
 		PublicExport:   cfg.PublicExport,
+		PublicURL:      cfg.PublicURL,
 	}
 }

@@ -57,6 +57,10 @@ type Config struct {
 	RecheckPerRun int
 	// RecheckDelay is the pause between two recheck requests.
 	RecheckDelay time.Duration
+	// PublicURL is the public address of the site (scheme://host, no path), e.g. https://m3.example.hu.
+	// It is what absolute links are built from: the canonical address, the sitemap and the link
+	// previews. Empty = not set: the site then asks search engines not to index it and has no sitemap.
+	PublicURL string
 	// LockWait is how long an ingest or export waits for another one to finish (0 = fail at once).
 	LockWait time.Duration
 	// PublicAPI / PublicExport switch the REST API and the public downloads on (both are on by default).
@@ -152,6 +156,13 @@ func FromEnv(getenv func(string) string) (*Config, error) {
 		}
 		c.RefreshDelay = time.Duration(ms) * time.Millisecond
 	}
+	if v := getenv("M3_PUBLIC_URL"); strings.TrimSpace(v) != "" {
+		u, err := ParsePublicURL(v)
+		if err != nil {
+			return nil, fmt.Errorf("M3_PUBLIC_URL: %w", err)
+		}
+		c.PublicURL = u
+	}
 	if v := getenv("M3_LOCK_WAIT_SECONDS"); v != "" {
 		sec, err := integer(v, 0, 0, 3600)
 		if err != nil {
@@ -199,6 +210,33 @@ func ParseProxyURL(raw string) (*url.URL, error) {
 		}
 	}
 	return u, nil
+}
+
+// ParsePublicURL validates the public address of the site and returns it in the form
+// scheme://host[:port] without a trailing slash. Only an origin is accepted: no user info, path,
+// query or fragment, so links built from it cannot lead anywhere else.
+func ParsePublicURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	if err != nil || strings.ContainsAny(raw, " \t\r\n\\") {
+		return "", fmt.Errorf("not a valid URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("scheme must be http or https (got %q)", u.Scheme)
+	}
+	if u.Hostname() == "" || u.User != nil {
+		return "", fmt.Errorf("must be scheme://host[:port], without user info")
+	}
+	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || strings.HasSuffix(raw, "?") || strings.HasSuffix(raw, "#") {
+		return "", fmt.Errorf("must be only scheme://host[:port] (no path, query or fragment)")
+	}
+	if p := u.Port(); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 {
+			return "", fmt.Errorf("invalid port")
+		}
+	}
+	return u.Scheme + "://" + strings.ToLower(u.Host), nil
 }
 
 // RedactedProxy returns scheme://host of the proxy, without any credentials, for logs.

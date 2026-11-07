@@ -100,6 +100,12 @@ type pageData struct {
 	Raw    bool
 	Notice string
 	F      filters
+	Meta   pageMeta // the head of the page: search engines and link previews (seo.go)
+
+	// ProgramPage is set on the page of a single program.
+	ProgramPage bool
+	Program     *model.Program
+	Facts       []kv
 
 	Items   []model.Program
 	History map[string][]store.Change
@@ -193,7 +199,7 @@ func parsePages(versions map[string]string) (map[string]*template.Template, erro
 		},
 	}
 	pages := map[string]*template.Template{}
-	for _, name := range []string{"index", "export", "api"} {
+	for _, name := range []string{"index", "export", "api", "program"} {
 		t, err := template.New(name).Funcs(funcs).ParseFS(sub, "layout.html", name+".html")
 		if err != nil {
 			return nil, err

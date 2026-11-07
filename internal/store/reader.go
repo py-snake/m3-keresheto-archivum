@@ -114,6 +114,48 @@ func NormalizeTerm(s string) (string, bool) {
 	return s, true
 }
 
+// ProgramByID returns the stored program with exactly this id; found is false when there is none.
+func (r *Reader) ProgramByID(ctx context.Context, id string) (p model.Program, found bool, err error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT "+selectColumns+" FROM programs WHERE program_id = ? LIMIT 1", id)
+	if err != nil {
+		return model.Program{}, false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return model.Program{}, false, rows.Err()
+	}
+	p, err = scanProgram(rows)
+	return p, err == nil, err
+}
+
+// SitemapEntry is what a sitemap needs of a program: its id and when its page last changed (Unix
+// seconds, 0 = unknown).
+type SitemapEntry struct {
+	ID       string
+	Modified int64
+}
+
+// SitemapEntries returns up to limit programs that the upstream still knows, in id order. The
+// modification time is the latest of the times the program was added, refreshed or changed its
+// availability, which are the things its page shows.
+func (r *Reader) SitemapEntries(ctx context.Context, limit int) ([]SitemapEntry, error) {
+	rows, err := r.db.QueryContext(ctx,
+		"SELECT program_id, max(added_at, refreshed_at, playable_changed_at) FROM programs WHERE gone_at = 0 ORDER BY id LIMIT ?", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SitemapEntry
+	for rows.Next() {
+		var e SitemapEntry
+		if err := rows.Scan(&e.ID, &e.Modified); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // Walk calls fn for every program in id order, streaming from the database. It is meant for the
 // export; an error from fn stops the walk.
 func (r *Reader) Walk(ctx context.Context, fn func(model.Program) error) error {

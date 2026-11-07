@@ -149,6 +149,9 @@ func (s *Server) exportFile(w http.ResponseWriter, r *http.Request) {
 
 // renderPage renders a whole page of the given template set.
 func (s *Server) renderPage(w http.ResponseWriter, page string, data pageData) {
+	if data.Meta.Title == "" { // the downloads and the API page: for people, not for the index
+		data.Meta = s.siteMeta(data.Title, siteDescription, robotsNoIndex, "")
+	}
 	var buf strings.Builder
 	if err := s.pages[page].ExecuteTemplate(&buf, "layout", data); err != nil {
 		s.o.Log.Error("rendering failed", "page", page, "err", err)
